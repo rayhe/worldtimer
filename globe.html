@@ -265,7 +265,7 @@
         var o = pts[ids[0] === String(ev.pointerId) ? ids[1] : ids[0]], d0 = Math.hypot(p.x - o.x, p.y - o.y), d1 = Math.hypot(ev.clientX - o.x, ev.clientY - o.y);
         if (d0 > 0) S.zoom = WT.clamp(S.zoom * d1 / d0, 0.45, 3.2);
       } else {
-        var k = 0.18 * (S.dist - 1) / 2.9 * 900 / Math.max(480, canvas.clientHeight);
+        var k = 2 * Math.tan(16 * D2R) * S.dist / canvas.clientHeight / D2R * 0.85;      // the surface follows the pointer
         S.vlon = -dx * k; S.vlat = dy * k; S.lon += S.vlon; S.lat = WT.clamp(S.lat + S.vlat, -85, 85);
       }
       p.x = ev.clientX; p.y = ev.clientY;
@@ -286,7 +286,7 @@
       if (S.lapse) {
         var pr = (tp - S.lapse.t0) / 10000;
         if (pr >= 1) { WT.skew(S.lapse.base); S.lapse = null; } else WT.skew(S.lapse.base + (pr < 0.5 ? 4 * pr * pr * pr : 1 - Math.pow(-2 * pr + 2, 3) / 2) * 86400000);
-      } else if (S.resetting) { var s = WT.skew() * Math.exp(-dt / 0.16); if (Math.abs(s) < 400) { s = 0; S.resetting = false; } WT.skew(s); }
+      } else if (S.resetting) { var s = WT.skew() * Math.exp(-dt / 0.13); if (Math.abs(s) < 800) { s = 0; S.resetting = false; } WT.skew(s); }
       else if (S.spin) WT.skew(WT.skew() + dt * 3600000);            // one hour per second
       var ms = WT.now(), sun = WT.sun(ms);
       refreshZones(false);
@@ -304,7 +304,7 @@
       if (S.fly) {
         var tl = WT.clamp(S.home.lat, -55, 55), dl = ((S.home.lon - S.lon + 540) % 360) - 180, k = 1 - Math.exp(-dt / 0.35);
         S.lon += dl * k; S.lat += (tl - S.lat) * k; if (Math.abs(dl) < 0.05 && Math.abs(tl - S.lat) < 0.05) S.fly = false;
-      } else if (!Object.keys(pts).length) { S.lon += S.vlon; S.lat = WT.clamp(S.lat + S.vlat, -85, 85); S.vlon *= Math.exp(-dt / 0.4); S.vlat *= Math.exp(-dt / 0.4); }
+      } else if (!Object.keys(pts).length) { S.lon += S.vlon; S.lat = WT.clamp(S.lat + S.vlat, -85, 85); S.vlon *= Math.exp(-dt / 0.25); S.vlat *= Math.exp(-dt / 0.25); }
       var ui = document.querySelector('main .readout').getBoundingClientRect(), shift = WT.clamp((canvas.clientHeight - ui.top) / canvas.clientHeight, 0, 0.5);
       var th = Math.tan(16 * D2R);                                   // fit the ring to the width and the globe to the height left above the controls
       S.dist = WT.clamp(Math.max(1.62 / (th * cw / ch), 1.22 / (th * (1 - shift))) / S.zoom, 1.9, 30);

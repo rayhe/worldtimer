@@ -53,7 +53,7 @@
       bLocal.hidden = st.home.tz === localTz;
       w.svg.setAttribute('aria-label', 'World timer showing ' + WT.fmtTime(l) + ' in ' + st.home.name);
     });
-    w.on('home', function (c) { WT.hash.set({ home: c.guessed || c.tz === localTz && c.name === WT.cityFor(localTz).name ? null : c.name }); });
+    w.on('home', function (c) { last = -1; WT.hash.set({ home: c.guessed || c.tz === localTz && c.name === WT.cityFor(localTz).name ? null : c.name }); });
 
     // ----- search -----
     var ov = el('div', 'search'), box = el('div', 'box'), inp = el('input'), ul = el('ul'), results = [], sel = 0;

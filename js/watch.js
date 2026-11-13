@@ -281,6 +281,7 @@
         var gr = E('g', { fill: 'none', stroke: 'var(--grat)', 'stroke-width': 1 }, mc);
         [60, 30, 0, -30].forEach(function (la) { E('circle', { r: f(R * (90 - la) / (90 - LAT_MIN)), 'stroke-dasharray': la === 0 ? '5 5' : null }, gr); });
         for (i = 0; i < 24; i++) { p = pol(R, i * 15); var p0 = pol(R * 0.1, i * 15); E('line', { x1: p0[0], y1: p0[1], x2: p[0], y2: p[1] }, gr); }
+        if (cfg.map === 'relief') E('path', { d: landPath(R), fill: '#000', opacity: 0.32, transform: 'translate(1.6 2.4)' }, mc);      // drop shadow: the continents sit proud of the sea
         E('path', {
           id: U('land'), d: landPath(R), class: 'wt-land',
           fill: cfg.map === 'relief' ? 'var(--land)' : cfg.map === 'engraved' ? 'var(--ink)' : 'none', 'fill-opacity': cfg.map === 'engraved' ? 0.2 : 1,
@@ -464,8 +465,9 @@
         if (G.glare) G.glare.setAttribute('transform', 'translate(' + f(-p.x * 0.05) + ' ' + f(-p.y * 0.05) + ') rotate(-28)');
         var d = st.drag;
         if (!d || d.kind === 'pusher') { if (!d) { var c = cityOf(ev.target); if (c) showTip(c, ev.clientX, ev.clientY); else hideTip(); } return; }
-        var da = mod(p.a - d.a + 180, 360) - 180; d.a = p.a; d.moved += Math.abs(da);
+        var da = mod(p.a - d.a + 180, 360) - 180; d.a = p.a; d.moved += Math.abs(da); d.acc = (d.acc || 0) + da;
         if (d.moved < 2.5) return;
+        da = d.acc; d.acc = 0;               // nothing is lost to the click-versus-drag threshold
         hideTip(); host.classList.add('dragging');
         if (d.kind === 'earth') { st.off += da / 15; d.live = true; }
         else if (d.kind === 'ring') { cancelAnim(); WT.skew(WT.skew() + da / 15 * 3600000); emit('scrub'); }
@@ -521,8 +523,8 @@
         if (pr >= 1) { WT.skew(st.lapse.base); cancelAnim(); }
         else WT.skew(st.lapse.base + (pr < 0.5 ? 4 * pr * pr * pr : 1 - Math.pow(-2 * pr + 2, 3) / 2) * 86400000);
       } else if (st.resetting) {
-        var s = WT.skew() * Math.exp(-dt / 0.16);
-        if (Math.abs(s) < 400) { s = 0; st.resetting = false; }
+        var s = WT.skew() * Math.exp(-dt / 0.13);
+        if (Math.abs(s) < 800) { s = 0; st.resetting = false; }
         WT.skew(s);
       }
       var ms = WT.now(); st.ms = ms;

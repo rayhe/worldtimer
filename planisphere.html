@@ -13,11 +13,14 @@
     .sheet { width: min(100%, 1120px, max(620px, calc((100dvh - 560px) * 2))); }
     .map { position: relative; width: 100%; aspect-ratio: 2; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #060a12; }
     .map canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-    .pin { position: absolute; transform: translate(-5px, -5px); display: flex; align-items: center; gap: 5px; background: none; border: 0; padding: 0; cursor: pointer; color: #fff; font: 600 9.5px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 5px #000; }
+    .pin { position: absolute; transform: translate(-5px, -5px); display: flex; pointer-events: none; align-items: center; gap: 5px; background: none; border: 0; padding: 0; cursor: pointer; color: #fff; font: 600 9.5px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 5px #000; }
     .pin::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #fff; border: 2px solid rgba(0, 0, 0, .65); box-sizing: content-box; flex: none; margin: -2px; }
     .pin i { font-style: normal; font-weight: 400; opacity: .85; font-variant-numeric: tabular-nums; }
     .pin span { opacity: 0; transition: opacity .15s; }
     .pin.on span, .pin:hover span, .pin:focus-visible span, .map.all .pin span { opacity: 1; }
+    .pin::after { content: ''; position: absolute; left: -8px; top: 50%; width: 24px; height: 24px; margin-top: -12px; border-radius: 50%; pointer-events: auto; }      /* only the dot takes clicks, so hidden labels never cover a neighbour */
+    .pin.left::after { left: auto; right: -8px; }
+    .pin.on span, .pin:hover span, .map.all .pin span { pointer-events: auto; }
     .pin.on::before { background: #3ddc97; }
     .pin.home::before { background: #ffb347; width: 10px; height: 10px; }
     .pin.left { flex-direction: row-reverse; transform: translate(calc(-100% + 5px), -5px); }
@@ -192,7 +195,7 @@
       requestAnimationFrame(frame);
       var dt = Math.min(0.1, (tp - (S.lastTp || tp)) / 1000); S.lastTp = tp;
       if (S.lapse) { var pr = (tp - S.lapse.t0) / 10000; if (pr >= 1) { WT.skew(S.lapse.base); S.lapse = null; } else WT.skew(S.lapse.base + (pr < 0.5 ? 4 * pr * pr * pr : 1 - Math.pow(-2 * pr + 2, 3) / 2) * 86400000); }
-      else if (S.resetting) { var s = WT.skew() * Math.exp(-dt / 0.16); if (Math.abs(s) < 400) { s = 0; S.resetting = false; } WT.skew(s); }
+      else if (S.resetting) { var s = WT.skew() * Math.exp(-dt / 0.13); if (Math.abs(s) < 800) { s = 0; S.resetting = false; } WT.skew(s); }
       var ms = WT.now(), min = Math.floor(ms / 60000);
       drawMap(ms); drawPlan(ms);
       if (min !== lastMin) { lastMin = min; pinEls.forEach(function (p) { p.t.textContent = WT.fmtTime(WT.local(p.c.tz, ms)); }); }

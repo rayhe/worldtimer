@@ -1,21 +1,66 @@
 # World Timer
 
-A single-file interactive world clock built with HTML, CSS, and vanilla JavaScript. Features an analog clock face with a polar Earth projection, rotating 24-hour ring with day/night shading, and clickable city labels spanning all major timezones.
+An interactive world-time watch for the browser: 24 cities, a 24-hour ring that tracks the sun, and a live day/night map of the Earth. No build step, no dependencies, plain HTML, CSS and JavaScript.
 
 **Live demo:** https://rayhe.github.io/worldtimer/
 
-## Features
+![The six variants: Heritage, Chrono, Atelier, Nocturne, Globe and Planisphere](docs/variants.jpg)
 
-- Analog clock with hour, minute, and second hands
-- Polar azimuthal Earth map centered on the North Pole
-- 24-hour ring with sunrise/sunset day-night gradient
-- City labels around the bezel — click any city to re-center the clock on that timezone
-- Animated transitions when switching timezones
-- Fully self-contained in a single HTML file (no dependencies)
+## Variants
 
-## Usage
+| Page | What it is |
+| --- | --- |
+| [`index.html`](index.html) · **Heritage** | The refined classic. Vector dial, north-polar map with a real terminator, sky-coloured hour ring. |
+| [`chrono.html`](chrono.html) · **Chrono** | World-time split-seconds chronograph: working pushers, three registers, a rattrapante hand, split list. |
+| [`atelier.html`](atelier.html) · **Atelier** | Build your own: 5 cases, 6 dials, 8 hand sets, 7 hand finishes, 6 index styles, 4 maps, 4 movements. The configuration lives in the URL. |
+| [`nocturne.html`](nocturne.html) · **Nocturne** | The watch in the dark. Your pointer is a torch that charges the lume; click the dial to strike the time on a minute repeater. |
+| [`globe.html`](globe.html) · **Globe** | A real globe in WebGL: NASA imagery, city lights, atmosphere, and an hour ring fixed to the sun. VR and AR through WebXR. |
+| [`planisphere.html`](planisphere.html) · **Planisphere** | A live sunlight map with a draggable multi-city timeline for finding meeting times. |
+| [`worldtimer.html`](worldtimer.html) · **Original** | The first version, unchanged, still a single self-contained file. |
 
-Visit the live demo above, or open `worldtimer.html` in any modern browser. (`index.html` is an identical copy, present so GitHub Pages serves the timer at the site root.)
+## How to read it
+
+The city ring and the map are one rigid piece: each city sits on its own time-zone meridian, with east running counter-clockwise as seen from above the North Pole. The 24-hour ring is fixed to the sun, so its 12 always points at the meridian where it is noon. Read any city's hour from the numeral beside it. Changing the home city turns the Earth; the passage of time turns the ring.
+
+Small dots between the city names are the zones that sit off the whole hour (Delhi, Kathmandu, Tehran, Adelaide and others). Daylight saving is honoured: cities move between slots as their offsets change.
+
+## Controls (watch pages)
+
+| Action | Pointer | Keyboard |
+| --- | --- | --- |
+| Make a city home | click its name or pip | `Tab` to it, `Enter` |
+| Next zone east / west | pusher at 10 o'clock (east) | `→` / `←` |
+| Travel in time | drag the 24-hour ring, or scroll | `↑` / `↓` one hour, `Shift` for a day |
+| Turn the Earth | drag the city ring | |
+| Back to now | press the crown | `N` or `Esc` |
+| Back to your zone | "My zone" | `L` |
+| Find a city | "Find city" | `/`, or just start typing |
+| 24 hours in 10 seconds | click the dial | `T` |
+
+Chrono adds `Space` (start/stop), `S` (split) and `R` (reset). The home city, and each variant's own settings, are kept in the URL fragment so a link reproduces what you see.
+
+## Structure
+
+```
+js/core.js        virtual clock, time-zone and solar maths, city data, variant nav
+js/watch.js       the SVG watch engine shared by Heritage, Chrono, Atelier and Nocturne
+js/page.js        digital readout, chips, city search, keyboard, URL state
+js/land.js        land outlines for the dial map
+js/earth-tex.js   day, night and relief textures for Globe and Planisphere
+css/base.css      shared page styles
+```
+
+Everything is a classic script, so every page also works opened straight from disk. The solar position uses low-precision almanac formulae (good to about 0.01°); time zones come from the browser's own `Intl` database.
+
+## Notes
+
+- Globe needs WebGL 2. The VR and AR buttons appear only where the browser reports WebXR support. The stereo render path has been exercised with a simulated headset, not on real hardware.
+- Nocturne's repeater and Chrono's pusher clicks use Web Audio and only sound after a click or key press.
+
+## Credits
+
+- Land outlines: [Natural Earth](https://www.naturalearthdata.com/) 1:110m, public domain, via [world-atlas](https://github.com/topojson/world-atlas).
+- Earth imagery: NASA Blue Marble and Earth at Night (NASA Earth Observatory / Visible Earth), packaged in the [three-globe](https://github.com/vasturiano/three-globe) examples.
 
 ## License
 
