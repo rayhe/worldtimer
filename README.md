@@ -2,6 +2,8 @@
 
 A single-file interactive world clock built with HTML, CSS, and vanilla JavaScript. Features an analog clock face with a polar Earth projection, rotating 24-hour ring with day/night shading, and clickable city labels spanning all major timezones.
 
+**Live demo:** https://rayhe.github.io/worldtimer/
+
 ## Features
 
 - Analog clock with hour, minute, and second hands
@@ -13,4 +15,8 @@ A single-file interactive world clock built with HTML, CSS, and vanilla JavaScri
 
 ## Usage
 
-Open `worldtimer.html` in any modern browser.
+Visit the live demo above, or open `worldtimer.html` in any modern browser. (`index.html` is an identical copy, present so GitHub Pages serves the timer at the site root.)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
