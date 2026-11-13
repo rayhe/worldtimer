@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>World Timer · Nocturne</title>
+  <meta name="description" content="A world timer in the dark: charge the lume with a torch, watch it fade, and strike the hours on a minute repeater.">
+  <meta name="theme-color" content="#030405">
+  <link rel="stylesheet" href="css/base.css">
+  <style>
+    body { background: #030405; transition: background .8s; }
+    body.lit { background: #14171c; }
+    .wt { cursor: none; }
+    body.lit .wt { cursor: auto; }
+    .wt-glow use { transition: none; }
+    #chime { min-height: 1.3em; font-size: .74rem; color: var(--muted); letter-spacing: .04em; }
+    #chime b { color: var(--fg); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="wt" id="watch"></div>
+    <div class="readout">
+      <div class="time" id="time">00:00:00</div>
+      <div class="zone" id="zone"></div>
+      <div id="chime" aria-live="polite"></div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <p class="hint">Your pointer is a torch: sweep it over the dial to charge the lume, then take it away and watch the glow fade · click the dial to strike the time on the repeater: hours low, quarters ding-dong, minutes high</p>
+  </main>
+  <script src="js/core.js"></script>
+  <script src="js/land.js"></script>
+  <script src="js/watch.js"></script>
+  <script src="js/page.js"></script>
+  <script>
+  (function () {
+    var LUMES = { 'C3 green': '#b9ffa3', 'BGW9 blue': '#a4ecff', 'Amber': '#ffd596' };
+    var lumeName = WT.hash.get().lume in LUMES ? WT.hash.get().lume : 'C3 green';
+    var w = WT.createWatch(document.getElementById('watch'), {
+      home: WT.homeFromHash(), glow: true, case: 'black', dial: 'noir', hands: 'sword', indices: 'field', map: 'outline', tapLapse: false
+    });
+    var dark = 1, lights = false, torch = { x: -9000, y: -9000, on: false }, grad, charge = {};
+
+    function setup() {
+      var G = w.G, defs = w.svg.querySelector('defs');
+      grad = w.E('radialGradient', { id: 'torch', gradientUnits: 'userSpaceOnUse', cx: -9000, cy: -9000, r: 1700 }, defs);
+      [[0, 0], [0.045, 0.02], [0.085, 0.55], [0.14, 0.9], [1, 0.955]].forEach(function (s) { var e = w.E('stop', { offset: s[0] }, grad); e.style.stopColor = '#010203'; e.style.stopOpacity = s[1]; });
+      w.E('circle', { r: 566, fill: 'url(#torch)', 'pointer-events': 'none' }, G.dark);      // darkness over the watch only, so the controls stay readable
+      paintLume();
+    }
+    function paintLume() {
+      var c = LUMES[lumeName], st = w.G.glow.style;
+      ['--lume', '--cityInk', '--ink', '--hand', '--accent', '--numLight', '--numDark', '--land', '--landEdge', '--sec'].forEach(function (v) { st.setProperty(v, c); });
+    }
+    setup(); w.on('build', setup);
+
+    // ----- lume: every element holds its own charge -----
+    function keyOf(it) { return it.id; }
+    var lastT = performance.now();
+    w.on('pointer', function (p, ev) { torch.x = p.x; torch.y = p.y; torch.on = p.r < 640; });
+    w.host.addEventListener('pointerleave', function () { torch.on = false; });
+    w.on('frame', function () {
+      var now = performance.now(), dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+      dark += ((lights ? 0 : 1) - dark) * (1 - Math.exp(-dt / 0.35));
+      w.G.dark.setAttribute('opacity', dark.toFixed(3)); w.G.glow.setAttribute('opacity', Math.min(1, dark * 1.15).toFixed(3));
+      var lit = torch.on && !lights;
+      grad.setAttribute('cx', lit ? torch.x.toFixed(1) : -9000); grad.setAttribute('cy', lit ? torch.y.toFixed(1) : -9000);
+      w.glowItems.forEach(function (it) {
+        if (!it.use) return;
+        var k = keyOf(it), c = charge[k]; if (c == null) c = 0.9;
+        var I = lights ? 0.7 : 0;
+        if (lit) {
+          var p = w.framePos(it), dx = p[0] - torch.x, dy = p[1] - torch.y, d = Math.sqrt(dx * dx + dy * dy);
+          if (it.frame === 'land') d = Math.max(0, d - 170);
+          if (it.frame === 'h' || it.frame === 'm') d = Math.max(0, d - 60);
+          I = Math.exp(-(d * d) / (2 * 105 * 105));
+        }
+        c += (I * 3.2 * (1 - c) - 0.12 * c * c - 0.004 * c) * dt;      // quick charge, fast early fade, long afterglow
+        c = WT.clamp(c, 0, 1); charge[k] = c;
+        var o = Math.round(Math.pow(c, 0.75) * 100) / 100;
+        if (o !== it.o) { it.o = o; it.use.setAttribute('opacity', o); }
+      });
+    });
+
+    // ----- minute repeater -----
+    var actx = null, chimeEl = document.getElementById('chime'), chiming = 0;
+    function bell(t, f0, gain) {
+      [[1, 1, 1.9], [2.76, 0.42, 1.1], [5.4, 0.18, 0.6], [8.93, 0.08, 0.3]].forEach(function (pp) {
+        var o = actx.createOscillator(), g = actx.createGain();
+        o.frequency.value = f0 * pp[0]; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain * pp[1], t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + pp[2]);
+        o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + pp[2] + 0.05);
+      });
+    }
+    function repeat() {
+      var l = WT.local(w.st.home.tz, WT.now()), h = l.h % 12 || 12, q = Math.floor(l.m / 15), m = l.m % 15;
+      chimeEl.textContent = '';
+      chimeEl.appendChild(WT.el('b', '', h + (h === 1 ? ' hour' : ' hours')));
+      chimeEl.appendChild(document.createTextNode(' · ' + q + (q === 1 ? ' quarter' : ' quarters') + ' · ' + m + (m === 1 ? ' minute' : ' minutes')));
+      try {
+        actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === 'suspended') actx.resume();
+        var t = Math.max(actx.currentTime + 0.08, chiming), LO = 659.25, HI = 830.61, i;
+        for (i = 0; i < h; i++) { bell(t, LO, 0.16); t += 0.56; }
+        if (q) t += 0.35;
+        for (i = 0; i < q; i++) { bell(t, HI, 0.14); bell(t + 0.3, LO, 0.14); t += 0.86; }
+        if (m) t += 0.35;
+        for (i = 0; i < m; i++) { bell(t, HI, 0.14); t += 0.48; }
+        chiming = t;
+      } catch (e) { chimeEl.appendChild(document.createTextNode(' (no audio available)')); }
+    }
+    w.on('tap', function (kind) { if (kind === 'dial') repeat(); });
+
+    var page = WT.page(w, { lapse: false });
+    var bl = WT.chip(page.chips, 'Lights on', function (b) {
+      lights = !lights; document.body.classList.toggle('lit', lights); document.documentElement.setAttribute('data-theme', 'dark');
+      b.textContent = lights ? 'Lights off' : 'Lights on'; b.setAttribute('aria-pressed', lights);
+    }, 'Room lights: charge everything at once, then switch off');
+    WT.chip(page.chips, lumeName, function (b) {
+      var n = Object.keys(LUMES); lumeName = n[(n.indexOf(lumeName) + 1) % n.length]; b.textContent = lumeName; paintLume(); WT.hash.set({ lume: lumeName === 'C3 green' ? null : lumeName });
+    }, 'Lume compound');
+    WT.chip(page.chips, 'Chime', repeat, 'Strike the time on the repeater');
+    if (window.DeviceOrientationEvent && matchMedia('(hover: none)').matches) {
+      WT.chip(page.chips, 'Tilt torch', function (b) {
+        var go = function () {
+          window.addEventListener('deviceorientation', function (ev) {
+            if (ev.gamma == null) return;
+            torch.x = WT.clamp(ev.gamma, -40, 40) / 40 * 430; torch.y = WT.clamp(ev.beta - 40, -40, 40) / 40 * 430; torch.on = true;
+          });
+          b.setAttribute('aria-pressed', true);
+        };
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') DeviceOrientationEvent.requestPermission().then(function (r) { if (r === 'granted') go(); }).catch(function () { });
+        else go();
+      }, 'Steer the torch by tilting your phone');
+    }
+    WT.nav('nocturne.html');
+    window.nocturne = { torch: torch, charge: charge, w: w, repeat: repeat, setLights: function (v) { if (v !== lights) bl.click(); } };
+  })();
+  </script>
+</body>
+</html>
