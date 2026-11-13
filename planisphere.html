@@ -6,6 +6,7 @@
   <title>World Timer · Planisphere</title>
   <meta name="description" content="A live sunlight map of the Earth with a draggable multi-city timeline for finding meeting times.">
   <meta name="theme-color" content="#0e1014">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%2317191d'/%3E%3Ccircle cx='32' cy='32' r='21' fill='%231e6aa8'/%3E%3Cpath d='M32 32V16M32 32l10 6' stroke='%23fff' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M28 3h8l-4 7z' fill='%231e90ff'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/base.css">
   <style>
     html, body { height: auto; }
@@ -56,7 +57,7 @@
   (function () {
     'use strict';
     var D2R = Math.PI / 180, TW = 1024, TH = 512, localTz = WT.localTz(), listeners = {};
-    var S = { home: WT.homeFromHash() || WT.cityFor(localTz), lapse: null, resetting: false, pins: [], lastTp: 0 };
+    var S = { home: WT.homeFromHash() || WT.localCity(), lapse: null, resetting: false, pins: [], lastTp: 0 };
     function emit(n, a, b) { (listeners[n] || []).forEach(function (f) { f(a, b); }); }
     function byName(n) { return WT.CITIES.filter(function (c) { return c.name === n; })[0]; }
     var hp = WT.hash.get().pins;
@@ -65,7 +66,7 @@
     var shim = {
       st: S, svg: document.getElementById('mapc'), on: function (n, f) { (listeners[n] = listeners[n] || []).push(f); return shim; },
       setHome: function (c) { if (!c) return; S.pins = S.pins.filter(function (p) { return p.name !== c.name; }); S.home = c; emit('home', c); buildPins(); dirty = true; },
-      local: function () { shim.setHome(WT.cityFor(localTz)); },
+      local: function () { shim.setHome(WT.localCity()); },
       step: function (dir) { WT.skew(WT.skew() + dir * 3600000); shim.cancelAnim(); },
       cancelAnim: function () { S.lapse = null; S.resetting = false; },
       reset: function () { S.lapse = null; var s = WT.skew() % 86400000; if (s > 43200000) s -= 86400000; if (s < -43200000) s += 86400000; WT.skew(s); S.resetting = true; },

@@ -6,8 +6,10 @@
   <title>World Timer · Globe</title>
   <meta name="description" content="The world timer as a real globe: NASA imagery, a true day/night terminator, city lights, and a 24-hour ring fixed to the sun. WebGL, with VR and AR.">
   <meta name="theme-color" content="#000000">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%2317191d'/%3E%3Ccircle cx='32' cy='32' r='21' fill='%231e6aa8'/%3E%3Cpath d='M32 32V16M32 32l10 6' stroke='%23fff' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M28 3h8l-4 7z' fill='%231e90ff'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/base.css">
   <style>
+    html, body { height: 100%; }
     body { background: #000; overflow: hidden; }
     #gl { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; touch-action: none; cursor: grab; }
     #gl.drag { cursor: grabbing; }
@@ -212,7 +214,7 @@
     // ---------- state ----------
     var localTz = WT.localTz(), listeners = {};
     var S = {
-      home: WT.homeFromHash() || WT.cityFor(localTz), lon: 0, lat: 20, dist: 0, zoom: 1, vlon: 0, vlat: 0, fly: true, drag: null, pinch: 0,
+      home: WT.homeFromHash() || WT.localCity(), lon: 0, lat: 20, dist: 0, zoom: 1, vlon: 0, vlat: 0, fly: true, drag: null, pinch: 0,
       grid: 0, labels: true, ring: true, spin: false, lapse: null, resetting: false, xr: null, zones: null, zb: -1
     };
     S.lon = S.home.lon; S.lat = WT.clamp(S.home.lat, -55, 55);
@@ -220,7 +222,7 @@
     var shim = {       // the same surface the SVG watch offers, so js/page.js drives this page too
       st: S, svg: canvas, on: function (n, f) { (listeners[n] = listeners[n] || []).push(f); return shim; },
       setHome: function (c) { if (!c) return; S.home = c; S.fly = true; emit('home', c); refreshZones(true); },
-      local: function () { shim.setHome(WT.cityFor(localTz)); },
+      local: function () { shim.setHome(WT.localCity()); },
       step: function (dir) {
         var cur = WT.wrapOff(WT.offsetMin(S.home.tz, WT.now()) / 60), best = null, bd = 99;
         S.zones.ring.forEach(function (e) { var d = ((e.slot - cur) * dir % 24 + 24) % 24; if (d > 1e-6 && d < bd) { bd = d; best = e; } });

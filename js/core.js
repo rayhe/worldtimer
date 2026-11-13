@@ -152,6 +152,53 @@
     var south = /^(Australia|Antarctica)|Auckland|Sao_Paulo|Buenos|Santiago|Johannesburg|Maputo|Windhoek|Lima|La_Paz/.test(tz);
     return { name: tz.split('/').pop().replace(/_/g, ' '), tz: tz, lat: south ? -33 : 40, lon: off / 4, guessed: true };
   };
+  // ---------- where the user is: two tiers ----------
+  // Tier 1 (always, no prompt): the time zone from the device settings, mapped to that zone's city.
+  // Tier 2 (only when asked): the browser's geolocation, rounded to ~1 km and remembered in this browser only.
+  var LOC_KEY = 'wt.loc';
+  WT.distKm = function (la1, lo1, la2, lo2) {
+    var a = Math.sin((la2 - la1) * D2R / 2), b = Math.sin((lo2 - lo1) * D2R / 2), h = a * a + Math.cos(la1 * D2R) * Math.cos(la2 * D2R) * b * b;
+    return 12742 * Math.asin(Math.min(1, Math.sqrt(h)));
+  };
+  function preciseCity(lat, lon) {
+    var tz = WT.localTz(), base = WT.cityFor(tz), off = WT.offsetMin(tz, Date.now()), name = base.guessed ? 'My location' : base.name, best = 80;
+    WT.CITIES.forEach(function (c) {          // borrow the name of a listed city if one is close by and keeps the same time
+      var d = WT.distKm(lat, lon, c.lat, c.lon);
+      if (d < best && WT.offsetMin(c.tz, Date.now()) === off) { best = d; name = c.name; }
+    });
+    return { name: name, tz: tz, lat: lat, lon: lon, precise: true };
+  }
+  WT.fmtCoord = function (c) { return Math.abs(c.lat).toFixed(2) + '\u00b0' + (c.lat < 0 ? 'S' : 'N') + ' ' + Math.abs(c.lon).toFixed(2) + '\u00b0' + (c.lon < 0 ? 'W' : 'E'); };
+  /** The user's own place: the remembered precise fix if there is one for the current zone, otherwise the zone's city. */
+  WT.localCity = function () {
+    var tz = WT.localTz();
+    try {
+      var s = JSON.parse(localStorage.getItem(LOC_KEY));
+      if (s && s.tz === tz && isFinite(s.lat) && isFinite(s.lon) && Math.abs(s.lat) <= 90 && Math.abs(s.lon) <= 180) return preciseCity(+s.lat, +s.lon);
+    } catch (e) { }
+    return WT.cityFor(tz);
+  };
+  /** Ask the browser for a position (this is what shows the permission prompt). Resolves to a city-like record. */
+  WT.locate = function () {
+    return new Promise(function (resolve, reject) {
+      if (!navigator.geolocation) { reject(new Error('unsupported')); return; }
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        var lat = Math.round(pos.coords.latitude * 100) / 100, lon = Math.round(pos.coords.longitude * 100) / 100;
+        try { localStorage.setItem(LOC_KEY, JSON.stringify({ lat: lat, lon: lon, tz: WT.localTz() })); } catch (e) { }
+        resolve(preciseCity(lat, lon));
+      }, function (err) { reject(err); }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 });
+    });
+  };
+  WT.forgetLocation = function () { try { localStorage.removeItem(LOC_KEY); } catch (e) { } };
+  /** Sunrise and sunset as local clock hours for a place on the day around `ms`. */
+  WT.sunTimes = function (city, ms) {
+    var sun = WT.sun(ms), l = WT.local(city.tz, ms), ha = ((city.lon - sun.lon + 540) % 360) - 180, noon = l.hours - ha / 15;
+    var c = (Math.sin(-0.833 * D2R) - Math.sin(city.lat * D2R) * Math.sin(sun.lat * D2R)) / (Math.cos(city.lat * D2R) * Math.cos(sun.lat * D2R));
+    if (c >= 1) return { polar: 'night' }; if (c <= -1) return { polar: 'day' };
+    var h = Math.acos(c) / D2R / 15, hm = function (x) { x = ((x % 24) + 24) % 24; var m = Math.round(x * 60) % 1440; return WT.pad(Math.floor(m / 60)) + ':' + WT.pad(m % 60); };
+    return { rise: hm(noon - h), set: hm(noon + h) };
+  };
+
   WT.findCity = function (q) {
     q = q.trim().toLowerCase(); if (!q) return [];
     var norm = function (s) { return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); };

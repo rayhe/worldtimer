@@ -54,7 +54,7 @@
   var DEF = {
     case: 'steel', dial: 'navy', hands: 'baton', handFinish: 'auto', indices: 'arabic', numerals: 'sans', map: 'relief',
     ring: 'sky', motion: 'sweep', seconds: true, track: 'ticks', pushers: false, glow: false, mapR: 216, skipIdx: [],
-    interactive: true, tapLapse: true
+    interactive: true, tapLapse: true, crownReset: true, crownLabel: 'Crown: back to now'
   };
 
   // ---------- hands (drawn pointing to 12; L = length, W = half width, T = tail) ----------
@@ -127,7 +127,7 @@
 
     // ----- home city -----
     var localTz = WT.localTz();
-    st.home = cfg.home || WT.cityFor(localTz);
+    st.home = cfg.home || WT.localCity();
     st.off = WT.offsetMin(st.home.tz, WT.now()) / 60;
     st.mOff = mod(st.off * 60, 60);
     function setHome(city, instant) {
@@ -186,14 +186,14 @@
         return pg;
       }
       // crown at 3 o'clock, knurled
-      var cr = E('g', { class: 'wt-pusher wt-crown', 'data-p': 'crown', tabindex: cfg.interactive ? 0 : null, role: 'button', 'aria-label': 'Crown: return to the current time' }, G.case);
+      var cr = E('g', { class: 'wt-pusher wt-crown', 'data-p': 'crown', tabindex: cfg.interactive ? 0 : null, role: 'button', 'aria-label': cfg.crownLabel }, G.case);
       var cri = E('g', {}, cr);
       E('rect', { x: 494, y: -15, width: 16, height: 30, fill: 'var(--c3)' }, cri);
       E('rect', { x: 506, y: -36, width: 44, height: 72, rx: 7, fill: url('knurl'), stroke: 'var(--c3)', 'stroke-width': 1.2 }, cri);
       for (i = 0; i < 9; i++) E('line', { x1: 510, x2: 546, y1: -30 + i * 7.5, y2: -30 + i * 7.5, stroke: 'var(--c3)', 'stroke-width': 1.4, opacity: 0.55 }, cri);
-      E('title', {}, cr).textContent = 'Crown: back to now';
+      E('title', {}, cr).textContent = cfg.crownLabel;
       pusher(-60, 'zone', 46, 30, 'Zone pusher: advance to the next city east');
-      if (cfg.pushers) { pusher(60, 'start', 50, 36, 'Start / stop'); pusher(120, 'reset', 50, 36, 'Split / reset'); }
+      if (cfg.pushers) { pusher(60, 'start', 50, 36, 'Start / stop'); pusher(120, 'reset', 50, 36, 'Fly back while running / reset when stopped'); }
       // bezel: wedges of brushed metal with two polished highlights
       for (i = 0; i < 120; i++) {
         var th = i * 3 + 1.5, lobe = Math.pow(0.5 + 0.5 * Math.cos(2 * (th + 42) * D2R), 2.2);
@@ -475,7 +475,7 @@
       var up = function (ev) {
         var d = st.drag; st.drag = null; host.classList.remove('dragging');
         if (!d) return;
-        if (d.kind === 'pusher') { d.el.classList.remove('down'); if (ev.type === 'pointerup') press(d.el.getAttribute('data-p')); return; }
+        if (d.kind === 'pusher') { d.el.classList.remove('down'); if (d.el.blur) d.el.blur(); if (ev.type === 'pointerup') press(d.el.getAttribute('data-p')); return; }      // no sticky focus after a mouse press
         if (d.moved >= 2.5) {
           if (d.kind === 'earth') {      // snap to the nearest zone
             var cur = WT.wrapOff(st.off), best = null, bd = 99;
@@ -503,7 +503,7 @@
       host.addEventListener('focusout', hideTip);
     }
     function press(name) {
-      if (name === 'crown') reset(); else if (name === 'zone') step(1);
+      if (name === 'crown') { if (cfg.crownReset) reset(); } else if (name === 'zone') step(1);
       emit('pusher', name);
     }
     function cancelAnim() { st.lapse = null; st.resetting = false; host.classList.remove('lapsing'); }
@@ -600,7 +600,7 @@
       on: function (n, fn) { (listeners[n] = listeners[n] || []).push(fn); return this; },
       set: function (o) { for (var k in o) cfg[k] = o[k]; build(); return this; },
       setHome: setHome, step: step, reset: reset, timelapse: timelapse, cancelAnim: cancelAnim, press: press,
-      local: function () { setHome(WT.cityFor(localTz)); },
+      local: function () { setHome(WT.localCity()); },
       framePos: function (it) {          // where a lume element currently sits, in viewBox units
         var a = it.a + (it.frame === 'earth' ? st.earthA : it.frame === 'ring' ? st.ringA : it.frame === 'h' ? st.hA : it.frame === 'm' ? st.mA : it.frame === 's' ? st.sA : 0);
         return pol(it.r, a);

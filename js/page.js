@@ -30,10 +30,25 @@
     var time = $('time'), date = $('date'), zone = $('zone'), chips = $('chips'), localTz = WT.localTz(), last = -1;
     var bNow = WT.chip(chips, 'Now', function () { w.reset(); }, 'Return to the current time (N)');
     var bLocal = WT.chip(chips, 'My zone', function () { w.local(); }, 'Return to your own time zone (L)');
+    // location, tier 2: only on request. Tier 1 (the device's time zone) needs no permission and is the default.
+    var bLoc = null, locBusy = false;
+    function locLabel() { if (bLoc && !locBusy) { var on = !!w.st.home.precise; bLoc.textContent = on ? 'Precise location' : 'Locate me'; bLoc.setAttribute('aria-pressed', on); } }
+    if (navigator.geolocation) {
+      bLoc = WT.chip(chips, 'Locate me', function (b) {
+        if (locBusy) return;
+        if (w.st.home.precise) { WT.forgetLocation(); w.local(); return; }           // second press forgets it again
+        locBusy = true; b.textContent = 'Locating...';
+        WT.locate().then(function (c) { locBusy = false; w.setHome(c); locLabel(); }, function (err) {
+          b.textContent = err && err.code === 1 ? 'Permission denied' : 'Location unavailable';
+          setTimeout(function () { locBusy = false; locLabel(); }, 2600);
+        });
+      }, 'Use your precise location for sunrise, sunset and the map marker. Kept in this browser only; press again to forget it.');
+    }
     WT.chip(chips, 'Find city', function () { openSearch(''); }, 'Search cities (/)');
     if (o.lapse !== false) WT.chip(chips, '24h lapse', function () { w.timelapse(); }, 'Run a full day in ten seconds (T)');
     bNow.hidden = bLocal.hidden = true;
 
+    locLabel();
     function skewText(ms) {
       var a = Math.abs(ms), d = Math.floor(a / 86400000), h = Math.floor(a % 86400000 / 3600000), m = Math.round(a % 3600000 / 60000);
       if (m === 60) { m = 0; h++; }
@@ -43,17 +58,20 @@
       var sec = Math.floor(ms / 1000); if (sec === last) return; last = sec;
       var l = WT.local(st.home.tz, ms), sk = WT.skew();
       if (time && !o.ownTime) time.textContent = WT.fmtTime(l, true);
-      if (date) date.textContent = WT.fmtDate(l.d);
+      if (date) {
+        var sun = st.home.guessed ? null : WT.sunTimes(st.home, ms);        // a zone we could only place roughly gets no sun times
+        date.textContent = WT.fmtDate(l.d) + (!sun ? '' : sun.polar ? ' · sun ' + (sun.polar === 'day' ? 'up' : 'down') + ' all day' : ' · ☀ ' + sun.rise + '–' + sun.set);
+      }
       if (zone) {
         zone.textContent = '';
         zone.appendChild(el('b', '', st.home.name));
-        zone.appendChild(document.createTextNode(' · ' + WT.fmtOffset(l.off) + (Math.abs(sk) > 30000 ? ' · ' + skewText(sk) + ' from now' : '')));
+        zone.appendChild(document.createTextNode((st.home.precise ? ' · ' + WT.fmtCoord(st.home) : '') + ' · ' + WT.fmtOffset(l.off) + (Math.abs(sk) > 30000 ? ' · ' + skewText(sk) + ' from now' : '')));
       }
       bNow.hidden = Math.abs(sk) < 1000;
       bLocal.hidden = st.home.tz === localTz;
       w.svg.setAttribute('aria-label', 'World timer showing ' + WT.fmtTime(l) + ' in ' + st.home.name);
     });
-    w.on('home', function (c) { last = -1; WT.hash.set({ home: c.guessed || c.tz === localTz && c.name === WT.cityFor(localTz).name ? null : c.name }); });
+    w.on('home', function (c) { last = -1; locLabel(); WT.hash.set({ home: c.guessed || c.precise || c.tz === localTz && c.name === WT.cityFor(localTz).name ? null : c.name }); });
 
     // ----- search -----
     var ov = el('div', 'search'), box = el('div', 'box'), inp = el('input'), ul = el('ul'), results = [], sel = 0;
