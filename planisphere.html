@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>World Timer · Planisphere</title>
+  <meta name="description" content="A live sunlight map of the Earth with a draggable multi-city timeline for finding meeting times.">
+  <meta name="theme-color" content="#0e1014">
+  <link rel="stylesheet" href="css/base.css">
+  <style>
+    html, body { height: auto; }
+    main { flex: none; justify-content: flex-start; gap: 10px; padding-top: 12px; }
+    .sheet { width: min(100%, 1120px, max(620px, calc((100dvh - 560px) * 2))); }
+    .map { position: relative; width: 100%; aspect-ratio: 2; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #060a12; }
+    .map canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .pin { position: absolute; transform: translate(-5px, -5px); display: flex; align-items: center; gap: 5px; background: none; border: 0; padding: 0; cursor: pointer; color: #fff; font: 600 9.5px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 5px #000; }
+    .pin::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #fff; border: 2px solid rgba(0, 0, 0, .65); box-sizing: content-box; flex: none; margin: -2px; }
+    .pin i { font-style: normal; font-weight: 400; opacity: .85; font-variant-numeric: tabular-nums; }
+    .pin span { opacity: 0; transition: opacity .15s; }
+    .pin.on span, .pin:hover span, .pin:focus-visible span, .map.all .pin span { opacity: 1; }
+    .pin.on::before { background: #3ddc97; }
+    .pin.home::before { background: #ffb347; width: 10px; height: 10px; }
+    .pin.left { flex-direction: row-reverse; transform: translate(calc(-100% + 5px), -5px); }
+    .pin:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+    .planner { position: relative; width: 100%; margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; touch-action: pan-y; cursor: grab; user-select: none; -webkit-user-select: none; background: #0b0e14; }
+    .planner.drag { cursor: grabbing; }
+    .planner canvas { display: block; width: 100%; }
+    .legend { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; font-size: .66rem; color: var(--muted); margin-top: 6px; }
+    .legend span::before { content: ''; display: inline-block; width: .8em; height: .8em; border-radius: 2px; margin-right: .45em; vertical-align: -1px; background: var(--c); }
+    .readout { min-height: 0; }
+    @media (max-width: 600px) { .pin { font-size: 8px; } .pin i { display: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="sheet">
+      <div class="map" id="map"><canvas id="mapc" aria-label="Sunlight map of the Earth"></canvas><div id="pins"></div></div>
+      <div class="planner" id="planner" tabindex="0" role="slider" aria-label="Timeline: drag or use the arrow keys to move through time"><canvas id="plan"></canvas></div>
+      <div class="legend"><span style="--c:#2fb37a">working hours 9–17</span><span style="--c:#c7973a">awake 7–9, 17–22</span><span style="--c:#1b2540">asleep</span><span style="--c:#3ddc97">bar above: everyone awake (solid: all at work)</span></div>
+    </div>
+    <div class="readout">
+      <div class="time" id="time">00:00:00</div>
+      <div class="date" id="date"></div>
+      <div class="zone" id="zone"></div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <p class="hint">Drag the timeline to move through the day · click a dot on the map to add or remove that city's row · a green bar above the rows marks hours when everyone is awake</p>
+  </main>
+  <script src="js/core.js"></script>
+  <script src="js/earth-tex.js"></script>
+  <script src="js/page.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var D2R = Math.PI / 180, TW = 1024, TH = 512, localTz = WT.localTz(), listeners = {};
+    var S = { home: WT.homeFromHash() || WT.cityFor(localTz), lapse: null, resetting: false, pins: [], lastTp: 0 };
+    function emit(n, a, b) { (listeners[n] || []).forEach(function (f) { f(a, b); }); }
+    function byName(n) { return WT.CITIES.filter(function (c) { return c.name === n; })[0]; }
+    var hp = WT.hash.get().pins;
+    S.pins = (hp ? hp.split(',').map(byName).filter(Boolean) : ['London', 'New York', 'Tokyo', 'Sydney'].map(byName)).filter(function (c) { return c.name !== S.home.name; }).slice(0, 6);
+
+    var shim = {
+      st: S, svg: document.getElementById('mapc'), on: function (n, f) { (listeners[n] = listeners[n] || []).push(f); return shim; },
+      setHome: function (c) { if (!c) return; S.pins = S.pins.filter(function (p) { return p.name !== c.name; }); S.home = c; emit('home', c); buildPins(); dirty = true; },
+      local: function () { shim.setHome(WT.cityFor(localTz)); },
+      step: function (dir) { WT.skew(WT.skew() + dir * 3600000); shim.cancelAnim(); },
+      cancelAnim: function () { S.lapse = null; S.resetting = false; },
+      reset: function () { S.lapse = null; var s = WT.skew() % 86400000; if (s > 43200000) s -= 86400000; if (s < -43200000) s += 86400000; WT.skew(s); S.resetting = true; },
+      timelapse: function () { if (S.lapse) { WT.skew(S.lapse.base); S.lapse = null; return; } S.resetting = false; S.lapse = { t0: performance.now(), base: WT.skew() }; }
+    };
+    function togglePin(c) {
+      if (c.name === S.home.name) return;
+      var i = S.pins.map(function (p) { return p.name; }).indexOf(c.name);
+      if (i >= 0) S.pins.splice(i, 1); else { S.pins.push(c); if (S.pins.length > 6) S.pins.shift(); }
+      WT.hash.set({ pins: S.pins.map(function (p) { return p.name; }).join(',') }); buildPins(); dirty = true;
+    }
+
+    // ---------- sunlight map: blend NASA day and night imagery per pixel by the sun's height ----------
+    var mapc = document.getElementById('mapc'), mx = mapc.getContext('2d'), off = document.createElement('canvas'), ox = off.getContext('2d');
+    off.width = TW; off.height = TH;
+    var dayPx = null, nightPx = null, out = ox.createImageData(TW, TH), sunKey = '', dirty = true;
+    function load(src, cb) {
+      var im = new Image(); im.onload = function () { var c = document.createElement('canvas'); c.width = TW; c.height = TH; var x = c.getContext('2d'); x.drawImage(im, 0, 0, TW, TH); cb(x.getImageData(0, 0, TW, TH).data); }; im.src = src;
+    }
+    load(WT_TEX.day, function (d) { dayPx = d; sunKey = ''; }); load(WT_TEX.night, function (d) { nightPx = d; sunKey = ''; });
+    var cosTab = new Float32Array(TW);
+    function composite(sun) {
+      if (!dayPx || !nightPx) return false;
+      var sd = Math.sin(sun.lat * D2R), cd = Math.cos(sun.lat * D2R), o = out.data, x, y, i = 0;
+      for (x = 0; x < TW; x++) cosTab[x] = Math.cos(((x + 0.5) / TW * 360 - 180 - sun.lon) * D2R);
+      for (y = 0; y < TH; y++) {
+        var la = (90 - (y + 0.5) / TH * 180) * D2R, a = Math.sin(la) * sd, b = Math.cos(la) * cd;
+        for (x = 0; x < TW; x++, i += 4) {
+          var s = a + b * cosTab[x], t = s <= -0.14 ? 0 : s >= 0.1 ? 1 : (s + 0.14) / 0.24; t = t * t * (3 - 2 * t);
+          var u = 1 - t, lit = 0.72 + 0.28 * (s > 0 ? Math.min(1, s * 1.6) : 0), warm = 4 * t * u;      // warm tint along the terminator
+          o[i] = dayPx[i] * t * lit * (1 + 0.25 * warm) + (nightPx[i] * 1.9 + dayPx[i] * 0.10) * u;
+          o[i + 1] = dayPx[i + 1] * t * lit + (nightPx[i + 1] * 1.7 + dayPx[i + 1] * 0.11) * u;
+          o[i + 2] = dayPx[i + 2] * t * lit * (1 - 0.2 * warm) + (nightPx[i + 2] * 1.4 + dayPx[i + 2] * 0.16) * u;
+          o[i + 3] = 255;
+        }
+      }
+      ox.putImageData(out, 0, 0); return true;
+    }
+    function drawMap(ms) {
+      var sun = WT.sun(ms), key = Math.round(sun.lon * 5) + ':' + Math.round(sun.lat * 10), dpr = Math.min(2, window.devicePixelRatio || 1);
+      var w = Math.round(mapc.clientWidth * dpr), h = Math.round(mapc.clientHeight * dpr);
+      if (key === sunKey && mapc.width === w && !dirty) return;
+      if (key !== sunKey) { if (!composite(sun)) return; sunKey = key; }
+      mapc.width = w; mapc.height = h; dirty = false;
+      mx.imageSmoothingQuality = 'high'; mx.drawImage(off, 0, 0, w, h);
+      mx.lineWidth = dpr; mx.strokeStyle = 'rgba(255,255,255,.09)'; mx.beginPath();
+      for (var i = 1; i < 24; i++) { var gx = Math.round(i / 24 * w) + 0.5; mx.moveTo(gx, 0); mx.lineTo(gx, h); }
+      mx.moveTo(0, h / 2); mx.lineTo(w, h / 2); mx.stroke();
+      // the point with the sun overhead, and the meridian where it is solar noon
+      var sx = (sun.lon + 180) / 360 * w, sy = (90 - sun.lat) / 180 * h;
+      mx.strokeStyle = 'rgba(255,214,102,.4)'; mx.setLineDash([4 * dpr, 6 * dpr]); mx.beginPath(); mx.moveTo(sx, 0); mx.lineTo(sx, h); mx.stroke(); mx.setLineDash([]);
+      var g = mx.createRadialGradient(sx, sy, 0, sx, sy, 26 * dpr); g.addColorStop(0, 'rgba(255,236,170,.95)'); g.addColorStop(0.25, 'rgba(255,214,102,.55)'); g.addColorStop(1, 'rgba(255,214,102,0)');
+      mx.fillStyle = g; mx.beginPath(); mx.arc(sx, sy, 26 * dpr, 0, 7); mx.fill();
+      mx.fillStyle = '#fff3c4'; mx.beginPath(); mx.arc(sx, sy, 5 * dpr, 0, 7); mx.fill();
+    }
+
+    // ---------- city pins ----------
+    var pinsEl = document.getElementById('pins'), mapEl = document.getElementById('map'), pinEls = [];
+    function buildPins() {
+      var z = WT.zones(WT.now()), list = [S.home].concat(S.pins);
+      z.ring.forEach(function (e) { if (!list.some(function (c) { return c.name === e.city.name; })) list.push(e.city); });
+      pinsEl.textContent = ''; pinEls = [];
+      list.forEach(function (c) {
+        if (c.guessed) return;
+        var b = document.createElement('button'), on = S.pins.indexOf(c) >= 0, home = c === S.home; b.type = 'button';
+        b.className = 'pin' + (home ? ' home on' : on ? ' on' : '') + (c.lon > 120 ? ' left' : '');
+        b.style.left = ((c.lon + 180) / 360 * 100) + '%'; b.style.top = ((90 - c.lat) / 180 * 100) + '%';
+        var sp = document.createElement('span'), t = document.createElement('i'); sp.appendChild(document.createTextNode(c.name + ' ')); sp.appendChild(t); b.appendChild(sp);
+        b.title = home ? c.name + ' (home)' : (on ? 'Remove ' : 'Add ') + c.name + (on ? ' from' : ' to') + ' the timeline';
+        b.setAttribute('aria-label', b.title); b.setAttribute('aria-pressed', on || home);
+        b.addEventListener('click', function () { togglePin(c); });
+        pinsEl.appendChild(b); pinEls.push({ t: t, c: c });
+      });
+    }
+
+    // ---------- planner: one strip per city, every strip aligned on the same instant ----------
+    var planEl = document.getElementById('planner'), plan = document.getElementById('plan'), px = plan.getContext('2d'), ROW = 46, HEAD = 26, LABW = 0;
+    function band(h) { return h >= 9 && h < 17 ? 2 : h >= 7 && h < 22 ? 1 : 0; }
+    var BAND = ['#1b2540', '#8a6a2c', '#249164'], BAND_HI = ['#232f52', '#c7973a', '#2fb37a'];
+    function drawPlan(ms) {
+      var rows = [S.home].concat(S.pins), dpr = Math.min(2, window.devicePixelRatio || 1), cw = planEl.clientWidth, chh = HEAD + rows.length * ROW + 8;
+      if (plan.width !== Math.round(cw * dpr) || plan.height !== Math.round(chh * dpr)) { plan.width = Math.round(cw * dpr); plan.height = Math.round(chh * dpr); plan.style.height = chh + 'px'; }
+      px.setTransform(dpr, 0, 0, dpr, 0, 0); px.clearRect(0, 0, cw, chh);
+      LABW = cw < 520 ? 96 : 150;
+      var x0 = LABW, W = cw - LABW - 8, HOURS = cw < 520 ? 18 : 30, pph = W / HOURS, cx = x0 + W / 2;      // window of HOURS hours centred on the cursor
+      px.font = '600 10px ' + getComputedStyle(document.body).fontFamily; px.textBaseline = 'middle';
+      var awake = [];                                                    // per absolute hour: is everyone awake / at work?
+      rows.forEach(function (c, r) {
+        var l = WT.local(c.tz, ms), y = HEAD + r * ROW, first = Math.floor(l.hours - HOURS / 2), days = [];
+        px.save(); px.beginPath(); px.rect(x0, y, W, ROW - 6); px.clip();
+        for (var k = first; k <= first + HOURS + 1; k++) {
+          var hx = cx + (k - l.hours) * pph, h = ((k % 24) + 24) % 24, bd = band(h), abs = Math.round((ms - l.ms - l.s * 1000 - l.m * 60000 + (k - l.h) * 3600000) / 3600000);
+          px.fillStyle = bd === 2 ? BAND_HI[2] : BAND[bd]; px.fillRect(hx + 0.5, y, pph - 1, ROW - 6);
+          if (h === 0) { px.fillStyle = 'rgba(255,255,255,.75)'; px.fillRect(hx - 0.5, y, 2, ROW - 6); }
+          if (pph > 15 || h % 3 === 0) { px.fillStyle = bd === 0 ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.95)'; px.textAlign = 'center'; px.fillText(WT.pad(h), hx + pph / 2, y + (ROW - 6) / 2 + 3); }
+          if (h === 0) days.push([hx, new Date(l.d.getTime() + (k - l.h) * 3600000)]);
+          (awake[abs] = awake[abs] || { n: 0, w: 0, x: hx }); awake[abs].n += bd > 0 ? 1 : 0; awake[abs].w += bd === 2 ? 1 : 0;
+        }
+        px.font = '600 8px ' + px.font.split('px ')[1]; px.textAlign = 'left'; px.fillStyle = 'rgba(255,255,255,.85)';
+        days.forEach(function (d) { px.fillText(WT.fmtDate(d[1], true).toUpperCase(), d[0] + 5, y + 6); });      // day changes, drawn over the cells
+        px.restore();
+        px.textAlign = 'left'; px.fillStyle = c === S.home ? '#ffb347' : '#e9ecf1'; px.font = '600 11px ' + px.font.split('px ')[1];
+        px.fillText(c.name.toUpperCase().slice(0, cw < 520 ? 11 : 16), 10, y + 13);
+        px.fillStyle = '#9aa0ab'; px.font = '500 10px ' + px.font.split('px ')[1];
+        px.fillText(WT.fmtTime(l) + '  ' + WT.fmtDate(l.d, true).slice(0, 3), 10, y + 29); px.font = '600 10px ' + px.font.split('px ')[1];
+      });
+      // header: columns where everyone is awake (hollow) or everyone is at work (solid)
+      Object.keys(awake).forEach(function (k) {
+        var a = awake[k]; if (a.x < x0 - pph || a.x > x0 + W) return;
+        if (a.n === rows.length) { px.fillStyle = a.w === rows.length ? '#3ddc97' : 'rgba(61,220,151,.38)'; px.beginPath(); px.moveTo(Math.max(x0, a.x + 2), HEAD - 5); px.lineTo(Math.min(x0 + W, a.x + pph - 2), HEAD - 5); px.lineTo(Math.min(x0 + W, a.x + pph - 2), HEAD - 11); px.lineTo(Math.max(x0, a.x + 2), HEAD - 11); px.fill(); }
+      });
+      px.fillStyle = '#fff'; px.fillRect(cx - 1, 4, 2, chh - 8);
+      px.beginPath(); px.moveTo(cx - 6, 2); px.lineTo(cx + 6, 2); px.lineTo(cx, 11); px.fill();
+      planEl.setAttribute('aria-valuetext', WT.fmtTime(WT.local(S.home.tz, ms)) + ' in ' + S.home.name);
+      planEl._pph = pph;
+    }
+    var dragX = null;
+    planEl.addEventListener('pointerdown', function (ev) { dragX = ev.clientX; planEl.classList.add('drag'); planEl.setPointerCapture(ev.pointerId); shim.cancelAnim(); });
+    planEl.addEventListener('pointermove', function (ev) { if (dragX == null) return; WT.skew(WT.skew() - (ev.clientX - dragX) / planEl._pph * 3600000); dragX = ev.clientX; });
+    var end = function () { dragX = null; planEl.classList.remove('drag'); };
+    planEl.addEventListener('pointerup', end); planEl.addEventListener('pointercancel', end);
+    planEl.addEventListener('wheel', function (ev) { ev.preventDefault(); shim.cancelAnim(); WT.skew(WT.skew() + (Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY) * (ev.deltaMode ? 20 : 1) * 30000); }, { passive: false });
+
+    // ---------- loop ----------
+    var lastMin = -1;
+    function frame(tp) {
+      requestAnimationFrame(frame);
+      var dt = Math.min(0.1, (tp - (S.lastTp || tp)) / 1000); S.lastTp = tp;
+      if (S.lapse) { var pr = (tp - S.lapse.t0) / 10000; if (pr >= 1) { WT.skew(S.lapse.base); S.lapse = null; } else WT.skew(S.lapse.base + (pr < 0.5 ? 4 * pr * pr * pr : 1 - Math.pow(-2 * pr + 2, 3) / 2) * 86400000); }
+      else if (S.resetting) { var s = WT.skew() * Math.exp(-dt / 0.16); if (Math.abs(s) < 400) { s = 0; S.resetting = false; } WT.skew(s); }
+      var ms = WT.now(), min = Math.floor(ms / 60000);
+      drawMap(ms); drawPlan(ms);
+      if (min !== lastMin) { lastMin = min; pinEls.forEach(function (p) { p.t.textContent = WT.fmtTime(WT.local(p.c.tz, ms)); }); }
+      emit('frame', S, ms);
+    }
+    buildPins();
+    var page = WT.page(shim, { keys: function (ev) {
+      if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { shim.cancelAnim(); WT.skew(WT.skew() + (ev.key === 'ArrowRight' ? 1 : -1) * (ev.shiftKey ? 3600000 : 900000)); ev.preventDefault(); return true; }
+    } });
+    var lb = WT.chip(page.chips, 'All labels', function (b) { mapEl.classList.toggle('all'); b.setAttribute('aria-pressed', mapEl.classList.contains('all')); lastMin = -1; }, 'Show every city name on the map');
+    window.addEventListener('resize', function () { dirty = true; });
+    WT.nav('planisphere.html');
+    requestAnimationFrame(frame);
+    window.plani = { S: S, shim: shim };
+  })();
+  </script>
+</body>
+</html>
