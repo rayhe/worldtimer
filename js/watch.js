@@ -86,6 +86,7 @@
     var r = R * Math.min(1.25, (90 - lat) / (90 - LAT_MIN)), l = lon * D2R;
     return [-r * Math.sin(l), -r * Math.cos(l)];             // east runs counter-clockwise seen from above the pole
   }
+  var NIGHT = [-1.5, 0.5, 2.5, 4.5, 6.5, 8.5, 10.5, 12.5, 14.5, 16.5];   // stacked translucent bands: a soft terminator through civil, nautical and astronomical twilight
   var landCache = {};
   function landPath(R) {
     if (landCache[R]) return landCache[R];
@@ -151,7 +152,7 @@
       svg = E('svg', { viewBox: '-560 -560 1120 1120', class: 'wt-svg', role: 'img', 'aria-label': 'World timer watch' });
       svg.style.cssText = '--dial0:' + D.dial0 + ';--dial1:' + D.dial1 + ';--ink:' + D.ink + ';--cityBg:' + D.cityBg + ';--cityInk:' + D.cityInk +
         ';--ocean0:' + D.ocean0 + ';--ocean1:' + D.ocean1 + ';--land:' + D.land + ';--landEdge:' + D.landEdge + ';--grat:' + D.grat +
-        ';--hand:' + handCol + ';--lume:' + D.lume + ';--accent:' + D.accent + ';--sec:' + D.sec + ';--c0:' + C[0] + ';--c1:' + C[1] + ';--c2:' + C[2] + ';--c3:' + C[3];
+        ';--hand:' + handCol + ';--lume:' + D.lume + ';--accent:' + D.accent + ';--sec:' + D.sec + ';--c0:' + C[0] + ';--c1:' + C[1] + ';--c2:' + C[2] + ';--c3:' + C[3] + ';--numLight:#ffffff;--numDark:#141a24';
       var defs = E('defs', {}, svg), i, g, t, p;
       function grad(type, id, attrs, stops) {
         var gr = E(type, attrs, defs); gr.id = U(id);
@@ -285,7 +286,7 @@
           fill: cfg.map === 'relief' ? 'var(--land)' : cfg.map === 'engraved' ? 'var(--ink)' : 'none', 'fill-opacity': cfg.map === 'engraved' ? 0.2 : 1,
           stroke: cfg.map === 'relief' ? 'var(--landEdge)' : 'var(--ink)', 'stroke-width': cfg.map === 'outline' ? 1.5 : 0.9, 'stroke-opacity': cfg.map === 'relief' ? 0.75 : 0.7, 'stroke-linejoin': 'round'
         }, mc);
-        G.night = [0, 6, 12].map(function () { return E('path', { fill: '#050b20', 'fill-opacity': cfg.map === 'relief' ? 0.27 : 0.2, 'fill-rule': 'evenodd' }, mc); });
+        G.night = NIGHT.map(function () { return E('path', { fill: '#050b20', 'fill-opacity': cfg.map === 'relief' ? 0.085 : 0.06, 'fill-rule': 'evenodd' }, mc); });
         G.hot = E('circle', { r: 6, fill: '#fff', stroke: 'var(--accent)', 'stroke-width': 3, display: 'none' }, mc);
         G.homeDot = E('circle', { r: 5, fill: 'var(--accent)', stroke: '#fff', 'stroke-width': 1.6 }, mc);
         E('circle', { r: R, fill: url('vig'), opacity: 0.8 }, mc);
@@ -568,7 +569,7 @@
       }
       // sun: terminator on the map, sky colours on the ring
       var sun = WT.sun(ms), sk = Math.round(sun.lon * 4) + ':' + Math.round(sun.lat * 10);
-      if (G.night && sk !== st.sunKey) { st.sunKey = sk; [0, 6, 12].forEach(function (dep, j) { G.night[j].setAttribute('d', nightPath(cfg.mapR, sun, dep)); }); }
+      if (G.night && sk !== st.sunKey) { st.sunKey = sk; NIGHT.forEach(function (dep, j) { G.night[j].setAttribute('d', nightPath(cfg.mapR, sun, dep)); }); }
       var yk = st.home.name + Math.round(sun.lat * 5) + cfg.ring;
       if (yk !== st.skyKey) { st.skyKey = yk; paintSky(sun, ms); }
       emit('frame', st, ms);
@@ -586,7 +587,7 @@
         }
         segs[i].setAttribute('fill', c.css); lum[i] = c.lum;
       }
-      numEls.forEach(function (n) { n.el.setAttribute('fill', lum[mod(n.h * 4, 96)] + lum[mod(n.h * 4 - 1, 96)] > 1.15 ? '#141a24' : '#ffffff'); });
+      numEls.forEach(function (n) { n.el.setAttribute('fill', lum[mod(n.h * 4, 96)] + lum[mod(n.h * 4 - 1, 96)] > 1.15 ? 'var(--numDark)' : 'var(--numLight)'); });
     }
 
     build();

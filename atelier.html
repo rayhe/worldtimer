@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>World Timer · Atelier</title>
+  <meta name="description" content="Build your own world timer: cases, dials, eight hand sets, indices, maps and movements, shareable as a link.">
+  <link rel="stylesheet" href="css/base.css">
+  <style>
+    main { justify-content: flex-start; }
+    .bench { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 28px; width: 100%; max-width: 1180px; align-items: start; }
+    .stage { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+    .bench .wt { width: min(94vw, 62dvh, 640px); }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 16px; font-size: .72rem; }
+    .panel h1 { font: 600 .7rem/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; margin: 0 0 10px; color: var(--muted); }
+    .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+    fieldset { border: 0; margin: 0 0 9px; padding: 0; min-width: 0; }
+    legend { padding: 0; margin-bottom: 5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; font-size: .62rem; color: var(--muted); }
+    .opts { display: flex; flex-wrap: wrap; gap: 5px; }
+    .opt {
+      font: 600 .66rem/1 var(--mono); letter-spacing: .04em; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 8px;
+      padding: 6px 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-transform: capitalize; transition: border-color .15s, background .15s;
+    }
+    .opt:hover { border-color: var(--accent); }
+    .opt[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+    .opt:disabled { opacity: .35; cursor: not-allowed; }
+    .opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .sw { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(128, 128, 128, .55); flex: none; }
+    .opt svg { width: 13px; height: 34px; flex: none; }
+    .opt svg path { fill: currentColor; }
+    @media (min-width: 940px) {
+      .bench { grid-template-columns: minmax(0, 1fr) 372px; }
+      .bench .wt { width: min(100%, calc(100dvh - 215px), 720px); }
+      .panel { max-height: calc(100dvh - 76px); overflow: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="bench">
+      <div class="stage">
+        <div class="wt" id="watch"></div>
+        <div class="readout">
+          <div class="time" id="time">00:00:00</div>
+          <div class="date" id="date"></div>
+          <div class="zone" id="zone"></div>
+          <div class="chips" id="chips"></div>
+        </div>
+      </div>
+      <form class="panel" id="panel" aria-label="Watch options" onsubmit="return false">
+        <h1>Atelier</h1>
+        <div class="presets" id="presets"></div>
+      </form>
+    </div>
+  </main>
+  <script src="js/core.js"></script>
+  <script src="js/land.js"></script>
+  <script src="js/watch.js"></script>
+  <script src="js/page.js"></script>
+  <script>
+  (function () {
+    var LABEL = { hz4: '4 Hz', hz5: '5 Hz', tick: 'Quartz', sweep: 'Glide', auto: 'Match dial', sky: 'Living sky', duo: 'Two-tone', centre: 'Centre', full: 'Full dial' };
+    var OPTS = [
+      ['case', 'Case', Object.keys(WT.CASES), function (v) { var c = WT.CASES[v]; return 'linear-gradient(135deg,' + c[0] + ',' + c[1] + ' 45%,' + c[2] + ')'; }],
+      ['dial', 'Dial', Object.keys(WT.DIALS), function (v) { var d = WT.DIALS[v]; return 'radial-gradient(circle at 40% 35%,' + d.dial0 + ',' + d.dial1 + ')'; }],
+      ['hands', 'Hands', WT.HANDS, null, true],
+      ['handFinish', 'Hand finish', ['auto'].concat(Object.keys(WT.HAND_FINISH)), function (v) { return WT.HAND_FINISH[v] || 'conic-gradient(#f3f5f7,#22408f,#e3c16a,#1b1d21,#f3f5f7)'; }],
+      ['indices', 'Indices', WT.INDICES],
+      ['numerals', 'Numerals', ['sans', 'serif']],
+      ['track', 'Minute track', ['ticks', 'railroad']],
+      ['map', 'Map', WT.MAPS],
+      ['mapSize', 'Map size', ['centre', 'full']],
+      ['ring', '24-hour ring', ['sky', 'duo']],
+      ['motion', 'Seconds hand', WT.MOTIONS]
+    ];
+    var DEF = { case: 'steel', dial: 'navy', hands: 'baton', handFinish: 'auto', indices: 'arabic', numerals: 'sans', track: 'ticks', map: 'relief', mapSize: 'centre', ring: 'sky', motion: 'sweep' };
+    var PRESETS = {
+      'Heritage': {},
+      'Cloisonné': { case: 'gold', dial: 'ivory', hands: 'leaf', handFinish: 'gold', map: 'relief', mapSize: 'full', ring: 'duo', track: 'railroad', indices: 'none' },
+      'Bleué': { dial: 'ivory', hands: 'breguet', handFinish: 'blued', indices: 'roman', numerals: 'serif', track: 'railroad', map: 'engraved', ring: 'duo', motion: 'hz4' },
+      'Saumon': { case: 'rose', dial: 'salmon', hands: 'dauphine', indices: 'baton', map: 'engraved', ring: 'duo', motion: 'hz4' },
+      'Field': { case: 'black', dial: 'noir', hands: 'syringe', indices: 'field', map: 'outline', motion: 'tick' },
+      'Verde': { case: 'bronze', dial: 'forest', hands: 'alpha', indices: 'dots', motion: 'hz4' },
+      'Glacier': { dial: 'silver', hands: 'sword', handFinish: 'blued', indices: 'baton', map: 'relief', motion: 'hz5' },
+      'Stealth': { case: 'black', dial: 'noir', hands: 'skeleton', handFinish: 'white', indices: 'none', map: 'outline', mapSize: 'full', ring: 'duo' }
+    };
+    var state = {}, k, h = WT.hash.get();
+    for (k in DEF) state[k] = OPTS.some(function (o) { return o[0] === k && o[2].indexOf(h[k]) >= 0; }) ? h[k] : DEF[k];
+
+    function toCfg() {
+      var c = {}; for (var k in state) c[k] = state[k];
+      c.mapR = state.mapSize === 'full' && state.map !== 'none' ? 288 : 216;
+      if (c.mapR === 288) c.indices = 'none';
+      delete c.mapSize; return c;
+    }
+    var cfg0 = toCfg(); cfg0.home = WT.homeFromHash();
+    var w = WT.createWatch(document.getElementById('watch'), cfg0);
+    var page = WT.page(w);
+
+    var panel = document.getElementById('panel'), buttons = [];
+    OPTS.forEach(function (o) {
+      var fs = WT.el('fieldset'), box = WT.el('div', 'opts');
+      fs.appendChild(WT.el('legend', '', o[1])); fs.appendChild(box);
+      o[2].forEach(function (v) {
+        var b = WT.el('button', 'opt'); b.type = 'button';
+        if (o[3]) { var s = WT.el('span', 'sw'); s.style.background = o[3](v); b.appendChild(s); }
+        if (o[4]) {       // little drawing of the hand
+          var sh = WT.handShape(v, 62, 9, 8), svg = w.E('svg', { viewBox: '-13 -64 26 76', 'aria-hidden': 'true' }, b);
+          w.E('path', { d: sh.d, 'fill-rule': sh.evenodd ? 'evenodd' : null }, svg);
+        }
+        b.appendChild(document.createTextNode(LABEL[v] || v));
+        b.addEventListener('click', function () { state[o[0]] = v; apply(); });
+        box.appendChild(b); buttons.push({ b: b, key: o[0], v: v });
+      });
+      panel.appendChild(fs);
+    });
+    var presets = document.getElementById('presets');
+    Object.keys(PRESETS).forEach(function (name) {
+      WT.chip(presets, name, function () { for (var k in DEF) state[k] = PRESETS[name][k] || DEF[k]; apply(); }, 'Load the ' + name + ' preset');
+    });
+    WT.chip(presets, 'Shuffle', function () { OPTS.forEach(function (o) { state[o[0]] = o[2][Math.floor(Math.random() * o[2].length)]; }); if (state.map === 'none') state.map = 'relief'; apply(); }, 'Surprise me');
+    WT.chip(page.chips, 'Copy link', function (b) {
+      var done = function () { b.textContent = 'Link copied'; setTimeout(function () { b.textContent = 'Copy link'; }, 1400); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(location.href).then(done, function () { prompt('Copy this link', location.href); });
+      else prompt('Copy this link', location.href);
+    }, 'Copy a link to this exact watch');
+
+    function sync() {
+      var full = state.mapSize === 'full' && state.map !== 'none';
+      buttons.forEach(function (x) {
+        x.b.setAttribute('aria-pressed', state[x.key] === x.v);
+        x.b.disabled = (x.key === 'indices' && full) || (x.key === 'numerals' && (full || ['arabic', 'field'].indexOf(state.indices) < 0)) || (x.key === 'mapSize' && state.map === 'none');
+      });
+      var patch = {}; for (var k in DEF) patch[k] = state[k] === DEF[k] ? null : state[k];
+      WT.hash.set(patch);
+    }
+    function apply() { w.set(toCfg()); sync(); }
+    sync();
+    WT.nav('atelier.html');
+    window.atelier = { state: state, apply: apply, PRESETS: PRESETS, DEF: DEF };
+  })();
+  </script>
+</body>
+</html>

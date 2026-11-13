@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>World Timer · Chrono</title>
+  <meta name="description" content="World-time split-seconds chronograph: working pushers, three registers and a rattrapante hand.">
+  <link rel="stylesheet" href="css/base.css">
+  <style>
+    .chrono { font-variant-numeric: tabular-nums; }
+    .chrono .big { font-size: clamp(1.35rem, 4.2vw, 1.8rem); font-weight: 600; letter-spacing: .02em; }
+    .chrono .big small { font-size: .6em; color: var(--muted); font-weight: 500; margin-left: .5em; }
+    .laps { list-style: none; margin: 4px 0 0; padding: 0; font-size: .74rem; color: var(--muted); min-height: 1.3em; display: flex; gap: 6px 14px; flex-wrap: wrap; justify-content: center; }
+    .laps li b { color: var(--fg); font-weight: 600; }
+    .state-dot { display: inline-block; width: .5em; height: .5em; border-radius: 50%; background: var(--muted); margin-right: .5em; vertical-align: middle; }
+    .running .state-dot { background: #ff5a1f; box-shadow: 0 0 0 4px rgba(255, 90, 31, .2); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="wt" id="watch"></div>
+    <div class="readout chrono" id="readout">
+      <div class="big"><span class="state-dot"></span><span id="elapsed">00:00.00</span><small id="time">00:00:00</small></div>
+      <div class="zone" id="zone"></div>
+      <ul class="laps" id="laps" aria-label="Split times"></ul>
+      <div class="chips" id="chips"></div>
+    </div>
+    <p class="hint">Top pusher starts and stops · bottom pusher splits while running and resets when stopped · the pusher at 10 steps one zone east<span class="kb"> · <kbd>Space</kbd> start/stop · <kbd>S</kbd> split · <kbd>R</kbd> reset · <kbd>/</kbd> find city</span></p>
+  </main>
+  <script src="js/core.js"></script>
+  <script src="js/land.js"></script>
+  <script src="js/watch.js"></script>
+  <script src="js/page.js"></script>
+  <script>
+  (function () {
+    var SUB = [ // centre, radius, divisions, labels, what it counts
+      { id: 'min', x: 150, y: 0, n: 30, major: 5, labels: { 10: '10', 20: '20', 0: '30' }, title: '30 MIN' },
+      { id: 'hour', x: 0, y: 150, n: 12, major: 1, labels: { 3: '3', 6: '6', 9: '9', 0: '12' }, title: '12 H' },
+      { id: 'sec', x: -150, y: 0, n: 60, major: 5, labels: { 20: '20', 40: '40', 0: '60' }, title: '' }
+    ];
+    var looks = { 'Reverse panda': { dial: 'noir', bg: '#deded8', ink: '#15171a' }, 'Panda': { dial: 'silver', bg: '#16181c', ink: '#f1f1ee' }, 'Blue': { dial: 'navy', bg: '#0a2a45', ink: '#ffffff' }, 'Salmon': { dial: 'salmon', bg: '#2b2320', ink: '#f6e3d9' } };
+    var lookName = WT.hash.get().look in looks ? WT.hash.get().look : 'Reverse panda', look = looks[lookName];
+    var w = WT.createWatch(document.getElementById('watch'), {
+      home: WT.homeFromHash(), dial: look.dial, map: 'none', indices: 'baton', skipIdx: [3, 6, 9], seconds: false, pushers: true, hands: 'sword', tapLapse: false
+    });
+    var E = w.E, H = {};
+
+    function decorate() {
+      var G = w.G;
+      // fifth-of-a-second scale for the chronograph hand
+      var fine = E('g', { stroke: 'var(--ink)', 'stroke-width': 0.8, opacity: 0.55 }, G.dial);
+      for (var i = 0; i < 300; i++) if (i % 5) { var a = w.pol(315, i * 1.2), b = w.pol(320, i * 1.2); E('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1] }, fine); }
+      var legend = E('g', { fill: 'var(--ink)', 'text-anchor': 'middle', 'font-family': '"Avenir Next","Helvetica Neue","Segoe UI",Roboto,Arial,sans-serif' }, G.dial);
+      E('text', { y: -150, 'font-size': 21, 'font-weight': 600, 'letter-spacing': 5 }, legend).textContent = 'WORLD TIMER';
+      E('text', { y: -124, 'font-size': 13, 'letter-spacing': 4, opacity: 0.75 }, legend).textContent = 'RATTRAPANTE';
+      SUB.forEach(function (s) {
+        var g = E('g', { transform: 'translate(' + s.x + ' ' + s.y + ')' }, G.sub), R = 80;
+        E('circle', { r: R + 3, fill: 'rgba(0,0,0,.35)' }, g);
+        E('circle', { r: R, fill: look.bg, stroke: 'var(--c1)', 'stroke-width': 2.5 }, g);
+        for (var r = 10; r < R - 22; r += 5) E('circle', { r: r, fill: 'none', stroke: look.ink, 'stroke-width': 0.5, opacity: 0.16 }, g);   // azurage
+        for (var i = 0; i < s.n; i++) {
+          var maj = i % s.major === 0, p0 = w.pol(R - (maj ? 15 : 9), i * 360 / s.n), p1 = w.pol(R - 3, i * 360 / s.n);
+          E('line', { x1: p0[0], y1: p0[1], x2: p1[0], y2: p1[1], stroke: look.ink, 'stroke-width': maj ? 2 : 1, opacity: maj ? 0.95 : 0.6 }, g);
+          if (s.labels[i]) { var q = w.pol(R - 31, i * 360 / s.n); E('text', { x: q[0], y: q[1] + 6.5, 'font-size': 18, 'font-weight': 600, 'text-anchor': 'middle', fill: look.ink, 'font-family': 'inherit' }, g).textContent = s.labels[i]; }
+        }
+        if (s.title) E('text', { y: 30, 'font-size': 9.5, 'letter-spacing': 2, 'text-anchor': 'middle', fill: look.ink, opacity: 0.7 }, g).textContent = s.title;
+        var hg = E('g', {}, g);
+        E('path', { d: 'M-2.6 16L-1 ' + (-(R - 12)) + 'L1 ' + (-(R - 12)) + 'L2.6 16Z', fill: s.id === 'sec' ? look.ink : 'var(--accent)', stroke: 'rgba(0,0,0,.35)', 'stroke-width': 0.5 }, hg);
+        E('circle', { r: 5.5, fill: 'var(--c1)', stroke: 'rgba(0,0,0,.5)', 'stroke-width': 0.8 }, g);
+        H[s.id] = hg;
+      });
+      // split hand (steel, underneath) and chronograph hand (accent)
+      var cap = [].slice.call(G.over.querySelectorAll('circle'));
+      function centre(color, cls) {
+        var g = E('g', { class: cls }, G.over);
+        E('path', { d: 'M-2.4 0L-0.8 -310L0.8 -310L2.4 0Z', fill: color, stroke: 'rgba(0,0,0,.4)', 'stroke-width': 0.6 }, g);
+        E('path', { d: 'M-2.4 0L-6 62L-6 92L6 92L6 62L2.4 0Z', fill: color, stroke: 'rgba(0,0,0,.4)', 'stroke-width': 0.6 }, g);
+        E('circle', { r: 9, fill: color, stroke: 'rgba(0,0,0,.4)', 'stroke-width': 0.6 }, g);
+        return g;
+      }
+      H.split = centre('#e8ebee', 'ch-split'); H.main = centre('var(--accent)', 'ch-main');
+      cap.forEach(function (c) { G.over.appendChild(c); });
+    }
+    decorate(); w.on('build', decorate);
+
+    // ----- chronograph mechanism (runs on real time, independent of the scrubbed world time) -----
+    var C = { running: false, t0: 0, acc: 0, split: null, shown: 0, shownSplit: 0, laps: [] };
+    var elapsedEl = document.getElementById('elapsed'), lapsEl = document.getElementById('laps'), readout = document.getElementById('readout');
+    function elapsed() { return C.acc + (C.running ? performance.now() - C.t0 : 0); }
+    function fmt(ms) {
+      var cs = Math.floor(ms / 10), h = Math.floor(cs / 360000), m = Math.floor(cs / 6000) % 60, s = Math.floor(cs / 100) % 60;
+      return (h ? h + ':' : '') + WT.pad(m) + ':' + WT.pad(s) + '.' + WT.pad(cs % 100);
+    }
+    var actx = null, sound = false;
+    function click(freq) {
+      if (!sound) return;
+      try {
+        actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+        var t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'square'; o.frequency.setValueAtTime(freq, t); o.frequency.exponentialRampToValueAtTime(freq * 0.4, t + 0.03);
+        g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+        o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.06);
+      } catch (e) { }
+    }
+    function startStop() {
+      if (C.running) { C.acc = elapsed(); C.running = false; } else { C.t0 = performance.now(); C.running = true; }
+      readout.classList.toggle('running', C.running); click(2400);
+    }
+    function splitReset() {
+      if (C.running) {
+        if (C.split == null) { C.split = elapsed(); C.laps.unshift(C.split); C.laps.length = Math.min(C.laps.length, 4); }
+        else C.split = null;                     // rattrapante catches up with the running hand
+      } else { C.acc = 0; C.split = null; C.laps = []; }
+      renderLaps(); click(1700);
+    }
+    function renderLaps() {
+      lapsEl.textContent = '';
+      C.laps.forEach(function (l, i) { var li = WT.el('li', '', 'split ' + (C.laps.length - i) + ' '); li.appendChild(WT.el('b', '', fmt(l))); lapsEl.appendChild(li); });
+    }
+    w.on('pusher', function (name) { if (name === 'start') startStop(); else if (name === 'reset') splitReset(); });
+    w.on('frame', function (st, ms) {
+      var e = elapsed(), k = C.running ? 1 : 0.32;
+      // hands chase their targets, so a reset is a visible fly-back rather than a jump
+      C.shown += (e - C.shown) * (C.running && Math.abs(e - C.shown) < 500 ? 1 : k); if (Math.abs(e - C.shown) < 2) C.shown = e;
+      var sp = C.split == null ? C.shown : C.split;
+      C.shownSplit += (sp - C.shownSplit) * (C.split == null && Math.abs(sp - C.shownSplit) < 60 ? 1 : 0.3); if (Math.abs(sp - C.shownSplit) < 2) C.shownSplit = sp;
+      var R = function (a) { return 'rotate(' + (Math.round(a * 100) / 100) + ')'; };
+      H.main.setAttribute('transform', R(C.shown / 1000 * 6 % 360));
+      H.split.setAttribute('transform', R(C.shownSplit / 1000 * 6 % 360));
+      H.min.setAttribute('transform', R(C.shown / 60000 * 12 % 360));
+      H.hour.setAttribute('transform', R(C.shown / 3600000 * 30 % 360));
+      H.sec.setAttribute('transform', R(st.sA));
+      elapsedEl.textContent = fmt(e);
+    });
+
+    var page = WT.page(w, {
+      lapse: false, noType: true,
+      keys: function (ev) {
+        if (ev.target.closest && ev.target.closest('.wt-pusher, button')) return false;
+        if (ev.key === ' ') { w.press('start'); ev.preventDefault(); return true; }
+        if (ev.key === 's' || ev.key === 'S') { if (C.running) w.press('reset'); return true; }
+        if (ev.key === 'r' || ev.key === 'R') { if (!C.running) w.press('reset'); return true; }
+      }
+    });
+    var names = Object.keys(looks);
+    WT.chip(page.chips, lookName, function (b) {
+      lookName = names[(names.indexOf(lookName) + 1) % names.length]; look = looks[lookName]; b.textContent = lookName;
+      WT.hash.set({ look: lookName === 'Reverse panda' ? null : lookName }); w.set({ dial: look.dial });
+    }, 'Change the dial');
+    WT.chip(page.chips, 'Sound off', function (b) { sound = !sound; b.textContent = sound ? 'Sound on' : 'Sound off'; b.setAttribute('aria-pressed', sound); click(2400); }, 'Pusher clicks');
+    WT.nav('chrono.html');
+    window.chrono = { C: C, w: w };
+  })();
+  </script>
+</body>
+</html>
