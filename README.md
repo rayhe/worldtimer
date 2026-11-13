@@ -11,7 +11,7 @@ An interactive world-time watch for the browser: 24 cities, a 24-hour ring that 
 | Page | What it is |
 | --- | --- |
 | [`index.html`](index.html) · **Heritage** | The refined classic. Vector dial, north-polar map with a real terminator, sky-coloured hour ring. |
-| [`chrono.html`](chrono.html) · **Chrono** | World-time split-seconds chronograph: working pushers, three registers, a rattrapante hand, split list. |
+| [`chrono.html`](chrono.html) · **Chrono** | World-time flyback rattrapante chronograph. Top pusher starts and stops, the button in the crown splits (the steel hand stops, then catches up), the bottom pusher flies back to zero while running. |
 | [`atelier.html`](atelier.html) · **Atelier** | Build your own: 5 cases, 6 dials, 8 hand sets, 7 hand finishes, 6 index styles, 4 maps, 4 movements. The configuration lives in the URL. |
 | [`nocturne.html`](nocturne.html) · **Nocturne** | The watch in the dark. Your pointer is a torch that charges the lume; click the dial to strike the time on a minute repeater. |
 | [`globe.html`](globe.html) · **Globe** | A real globe in WebGL: NASA imagery, city lights, atmosphere, and an hour ring fixed to the sun. VR and AR through WebXR. |
@@ -37,7 +37,14 @@ Small dots between the city names are the zones that sit off the whole hour (Del
 | Find a city | "Find city" | `/`, or just start typing |
 | 24 hours in 10 seconds | click the dial | `T` |
 
-Chrono adds `Space` (start/stop), `S` (split) and `R` (reset). The home city, and each variant's own settings, are kept in the URL fragment so a link reproduces what you see.
+Chrono adds `Space` (start/stop), `S` (split, the crown button), `F` (fly back) and `R` (fly back while running, reset when stopped); on that page the crown splits instead of returning to now. The home city, and each variant's own settings, are kept in the URL fragment so a link reproduces what you see.
+
+## Location
+
+Your place is worked out in two tiers:
+
+1. **Time zone, from the device settings.** This is the default and needs no permission. The home city is that zone's city, and sunrise, sunset and the map marker use its coordinates.
+2. **Precise position, only if you ask.** "Locate me" requests the browser's geolocation. The fix is rounded to about a kilometre, kept in this browser's local storage only, never put in the URL, and dropped automatically if the device's time zone changes. Press the chip again to forget it.
 
 ## Structure
 
