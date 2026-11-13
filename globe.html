@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>World Timer · Globe</title>
+  <meta name="description" content="The world timer as a real globe: NASA imagery, a true day/night terminator, city lights, and a 24-hour ring fixed to the sun. WebGL, with VR and AR.">
+  <meta name="theme-color" content="#000000">
+  <link rel="stylesheet" href="css/base.css">
+  <style>
+    body { background: #000; overflow: hidden; }
+    #gl { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; touch-action: none; cursor: grab; }
+    #gl.drag { cursor: grabbing; }
+    main { justify-content: flex-end; pointer-events: none; position: relative; z-index: 2; }
+    main > * { pointer-events: auto; }
+    .readout { text-shadow: 0 1px 8px #000, 0 0 2px #000; }
+    .chip { backdrop-filter: blur(8px); }
+    .wt-nav { position: relative; z-index: 2; }
+    #labels { position: fixed; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+    .lab {
+      position: absolute; left: 0; top: 0; font: 600 10px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #e8ecf2; white-space: nowrap;
+      padding: 3px 6px; border-radius: 4px; pointer-events: auto; cursor: pointer; text-shadow: 0 0 4px #000, 0 0 2px #000; will-change: transform, opacity; background: transparent; border: 0;
+    }
+    .lab i { font-style: normal; font-weight: 400; opacity: .8; margin-left: .5em; font-variant-numeric: tabular-nums; }
+    .lab:hover, .lab:focus-visible { background: rgba(20, 24, 32, .8); outline: none; }
+    .lab.home { color: #ffb347; }
+    .slider { display: flex; align-items: center; gap: 10px; justify-content: center; margin-top: 8px; font-size: .68rem; color: var(--muted); }
+    .slider input { width: min(60vw, 320px); accent-color: #ffb347; }
+    #msg { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; z-index: 3; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <canvas id="gl" aria-label="Globe"></canvas>
+  <div id="labels"></div>
+  <div id="msg"></div>
+  <main>
+    <div class="readout">
+      <div class="time" id="time">00:00:00</div>
+      <div class="date" id="date"></div>
+      <div class="zone" id="zone"></div>
+      <label class="slider"><span>−24h</span><input id="scrub" type="range" min="-1440" max="1440" step="5" value="0" aria-label="Time offset from now, in minutes"><span>+24h</span></label>
+      <div class="chips" id="chips"></div>
+    </div>
+    <p class="hint">Drag to turn the Earth · scroll or pinch to zoom · click a city to make it home · the ring is fixed to the sun: its 12 always faces noon</p>
+  </main>
+  <script src="js/core.js"></script>
+  <script src="js/earth-tex.js"></script>
+  <script src="js/page.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var D2R = Math.PI / 180, canvas = document.getElementById('gl'), msg = document.getElementById('msg');
+    var gl = canvas.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: true, xrCompatible: true, powerPreference: 'high-performance' });
+    if (!gl) { msg.style.display = 'flex'; msg.textContent = 'This variant needs WebGL 2, which this browser or device does not provide.'; WT.nav('globe.html'); return; }
+
+    // ---------- tiny column-major mat4 kit ----------
+    function mul(a, b) { var o = new Float32Array(16); for (var c = 0; c < 4; c++) for (var r = 0; r < 4; r++) o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3]; return o; }
+    function inv(m) {
+      var o = new Float32Array(16), a = m[0], b = m[1], c = m[2], d = m[3], e = m[4], f = m[5], g = m[6], h = m[7], i = m[8], j = m[9], k = m[10], l = m[11], M = m[12], n = m[13], p = m[14], q = m[15];
+      var b00 = a * f - b * e, b01 = a * g - c * e, b02 = a * h - d * e, b03 = b * g - c * f, b04 = b * h - d * f, b05 = c * h - d * g, b06 = i * n - j * M, b07 = i * p - k * M, b08 = i * q - l * M, b09 = j * p - k * n, b10 = j * q - l * n, b11 = k * q - l * p;
+      var det = 1 / (b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06);
+      o[0] = (f * b11 - g * b10 + h * b09) * det; o[1] = (c * b10 - b * b11 - d * b09) * det; o[2] = (n * b05 - p * b04 + q * b03) * det; o[3] = (k * b04 - j * b05 - l * b03) * det;
+      o[4] = (g * b08 - e * b11 - h * b07) * det; o[5] = (a * b11 - c * b08 + d * b07) * det; o[6] = (p * b02 - M * b05 - q * b01) * det; o[7] = (i * b05 - k * b02 + l * b01) * det;
+      o[8] = (e * b10 - f * b08 + h * b06) * det; o[9] = (b * b08 - a * b10 - d * b06) * det; o[10] = (M * b04 - n * b02 + q * b00) * det; o[11] = (j * b02 - i * b04 - l * b00) * det;
+      o[12] = (f * b07 - e * b09 - g * b06) * det; o[13] = (a * b09 - b * b07 + c * b06) * det; o[14] = (n * b01 - M * b03 - p * b00) * det; o[15] = (i * b03 - j * b01 + k * b00) * det;
+      return o;
+    }
+    function persp(fovy, asp, n, f) { var t = 1 / Math.tan(fovy / 2), o = new Float32Array(16); o[0] = t / asp; o[5] = t; o[10] = (f + n) / (n - f); o[11] = -1; o[14] = 2 * f * n / (n - f); return o; }
+    function lookAt(e) {      // look at the origin with +y up
+      var z = norm(e), x = norm([z[2], 0, -z[0]]), y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]];
+      return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -(x[0] * e[0] + x[1] * e[1] + x[2] * e[2]), -(y[0] * e[0] + y[1] * e[1] + y[2] * e[2]), -(z[0] * e[0] + z[1] * e[1] + z[2] * e[2]), 1]);
+    }
+    function norm(v) { var l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
+    function xf(m, v) { var w = m[3] * v[0] + m[7] * v[1] + m[11] * v[2] + m[15]; return [(m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12]) / w, (m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13]) / w, (m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14]) / w, w]; }
+
+    // ---------- shaders: the whole scene is ray-cast in one fragment shader, so there is no mesh at all ----------
+    var VS = '#version 300 es\nin vec2 aPos; uniform mat4 uInv; out vec3 vFar;\nvoid main(){ vec4 f = uInv * vec4(aPos, 1.0, 1.0); vFar = f.xyz / f.w; gl_Position = vec4(aPos, 0.0, 1.0); }';
+    var FS = [
+      '#version 300 es', 'precision highp float;',
+      'in vec3 vFar; out vec4 outColor;',
+      'uniform vec3 uCam, uSun; uniform sampler2D uDay, uNight, uAux, uRing;',
+      'uniform vec3 uCity[24]; uniform int uHome, uCities;',
+      'uniform float uTime, uGrid, uStars, uBgAlpha, uRingOn, uSunLon, uReady;',
+      'const float PI = 3.14159265359; const float R0 = 1.30; const float R1 = 1.52;',
+      'float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }',
+      'vec3 stars(vec3 d){',
+      '  float c = cos(uSunLon), s = sin(uSunLon); d = vec3(c * d.x - s * d.z, d.y, s * d.x + c * d.z);',      // sky stays put while the Earth turns
+      '  vec3 p = d * 150.0, id = floor(p), f = fract(p) - 0.5; float r = hash(id);',
+      '  float st = step(0.9965, r) * smoothstep(0.42, 0.0, length(f)) * (0.35 + 0.65 * fract(r * 91.7));',
+      '  return st * mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.9, 0.75), fract(r * 37.3));',
+      '}',
+      'vec4 samp(sampler2D t, vec3 n, vec2 off){',
+      '  vec2 uv = vec2(atan(-n.z, n.x) / (2.0 * PI) + 0.5, acos(clamp(n.y, -1.0, 1.0)) / PI);',
+      '  float ub = fract(uv.x + 0.5);',                                                                 // same longitude with the seam on the far side
+      '  vec2 dx = dFdx(uv), dy = dFdy(uv); float bx = dFdx(ub), by = dFdy(ub);',
+      '  if (abs(bx) < abs(dx.x)) dx.x = bx; if (abs(by) < abs(dy.x)) dy.x = by;',
+      '  return textureGrad(t, uv + off, dx, dy);',
+      '}',
+      'void main(){',
+      '  vec3 ro = uCam, rd = normalize(vFar - uCam);',
+      '  float b = dot(ro, rd), c = dot(ro, ro) - 1.0, disc = b * b - c, tS = 1e9;',
+      '  vec3 col = stars(rd) * uStars; float alpha = uBgAlpha;',
+      '  float sunDot = max(dot(rd, uSun), 0.0);',
+      '  vec3 sunGlow = vec3(1.0, 0.93, 0.8) * (pow(sunDot, 2500.0) * 4.0 + pow(sunDot, 180.0) * 0.5 + pow(sunDot, 12.0) * 0.08);',
+      '  float dmin = sqrt(max(c - b * b + 1.0, 0.0));',                                                  // closest approach of the ray to the centre
+      '  if (disc > 0.0 && b < 0.0) {',
+      '    tS = -b - sqrt(disc);',
+      '    vec3 n = normalize(ro + rd * tS), v = -rd;',
+      '    vec3 day = samp(uDay, n, vec2(0.0)).rgb, night = samp(uNight, n, vec2(0.0)).rgb; vec4 aux = samp(uAux, n, vec2(0.0));',
+      '    float water = smoothstep(0.35, 0.65, aux.r);',
+      '    float ex = samp(uAux, n, vec2(1.0 / 1024.0, 0.0)).g - samp(uAux, n, vec2(-1.0 / 1024.0, 0.0)).g;',
+      '    float ey = samp(uAux, n, vec2(0.0, 1.0 / 512.0)).g - samp(uAux, n, vec2(0.0, -1.0 / 512.0)).g;',
+      '    vec3 te = normalize(vec3(n.z, 0.0, -n.x) + vec3(1e-5, 0.0, 0.0)), tn = cross(n, te);',
+      '    vec3 nb = normalize(n - 5.0 * (ex * te - ey * tn) * (1.0 - water));',
+      '    float sd = dot(n, uSun), dayAmt = smoothstep(-0.12, 0.2, sd);',
+      '    float diff = max(dot(nb, uSun), 0.0);',
+      '    vec3 e = day * (vec3(0.035, 0.05, 0.085) + 1.2 * pow(diff, 0.8));',
+      '    vec3 hv = normalize(uSun + v);',
+      '    e += vec3(1.0, 0.94, 0.82) * pow(max(dot(n, hv), 0.0), 70.0) * water * 0.6 * dayAmt;',        // sun glint on the oceans
+      '    float tw = smoothstep(-0.16, 0.02, sd) * (1.0 - smoothstep(0.02, 0.32, sd));',
+      '    e = mix(e, e * vec3(1.3, 0.72, 0.45) + vec3(0.05, 0.015, 0.0), tw * 0.6);',                   // warm band along the terminator
+      '    e += pow(night, vec3(1.5)) * vec3(1.0, 0.85, 0.6) * 2.4 * (1.0 - dayAmt);',                   // city lights
+      '    if (uGrid > 0.0) {',
+      '      float lonD = degrees(atan(-n.z, n.x)), latD = degrees(asin(clamp(n.y, -1.0, 1.0))), cl = max(sqrt(1.0 - n.y * n.y), 0.05);',
+      '      float gl1 = abs(fract(lonD / 15.0 + 0.5) - 0.5) * 15.0 * cl, gl2 = abs(fract(latD / 30.0 + 0.5) - 0.5) * 30.0;',
+      '      float w = max(fwidth(latD), 0.02) * 1.2; float line = max(1.0 - smoothstep(0.0, w, gl1), 1.0 - smoothstep(0.0, w, gl2));',
+      '      e = mix(e, vec3(0.75, 0.88, 1.0), line * 0.22 * uGrid);',
+      '    }',
+      '    for (int i = 0; i < 24; i++) {',
+      '      if (i >= uCities) break;',
+      '      float a2 = 2.0 * (1.0 - dot(n, uCity[i]));',                                                // ~ squared angle to the city
+      '      bool home = (i == uHome);',
+      '      float core = 1.0 - smoothstep(0.00007, 0.00013, a2), rim = 1.0 - smoothstep(0.00022, 0.00032, a2);',
+      '      e = mix(e, vec3(0.02), (rim - core) * 0.7);',
+      '      e = mix(e, home ? vec3(1.0, 0.7, 0.28) : vec3(1.0), core);',
+      '      if (home) { float pr = 0.0011 * (0.55 + 0.45 * fract(uTime * 0.5)); e += vec3(1.0, 0.7, 0.28) * (1.0 - smoothstep(0.0, 0.00012, abs(a2 - pr))) * (1.0 - fract(uTime * 0.5)); }',
+      '    }',
+      '    float sa2 = 2.0 * (1.0 - dot(n, uSun));',
+      '    e += vec3(1.0, 0.85, 0.3) * (1.0 - smoothstep(0.0, 0.00016, abs(sa2 - 0.0009))) * 0.9;',      // ring around the point with the sun overhead
+      '    float fres = pow(1.0 - max(dot(n, v), 0.0), 3.2);',
+      '    e += vec3(0.25, 0.5, 1.0) * fres * (0.12 + 0.88 * smoothstep(-0.25, 0.35, sd));',             // atmosphere
+      '    float cover = clamp((1.0 - dmin) / max(fwidth(dmin), 1e-5), 0.0, 1.0);',
+      '    e = mix(vec3(0.02, 0.03, 0.05), e, uReady);',
+      '    col = mix(col, e, cover); alpha = mix(alpha, 1.0, cover);',
+      '  } else if (b < 0.0) {',
+      '    vec3 pc = normalize(ro - rd * b);',
+      '    float halo = exp(-(dmin - 1.0) * 26.0) * 0.6 * (0.1 + 0.9 * smoothstep(-0.3, 0.4, dot(pc, uSun)));',
+      '    col += vec3(0.3, 0.55, 1.0) * halo + sunGlow * uStars; alpha = max(alpha, halo);',
+      '  } else { col += sunGlow * uStars; }',
+      '  if (uRingOn > 0.0 && abs(rd.y) > 1e-5) {',
+      '    float t = -ro.y / rd.y; vec3 p = ro + rd * t; float r = length(p.xz);',
+      '    if (t > 0.0 && t < tS && r > R0 - 0.01 && r < R1 + 0.01) {',
+      '      float la = atan(-p.z, p.x), lb = atan(p.z, -p.x);',
+      '      float hour = mod(12.0 + (la - uSunLon) * 12.0 / PI, 24.0);',
+      '      float cell = floor(hour + 0.5), fr = hour - cell; if (ro.y < 0.0) fr = -fr;',                // un-mirror the numerals when seen from the south
+      '      vec2 uv = vec2((cell + fr) / 24.0, (r - R0) / (R1 - R0));',
+      '      float ax = dFdx(la), bx = dFdx(lb), ay = dFdy(la), by = dFdy(lb); if (abs(bx) < abs(ax)) ax = bx; if (abs(by) < abs(ay)) ay = by;',
+      '      vec4 rc = textureGrad(uRing, uv, vec2(ax / (2.0 * PI), dFdx(r) / (R1 - R0)), vec2(ay / (2.0 * PI), dFdy(r) / (R1 - R0)));',
+      '      float fw = max(fwidth(r), 1e-5), edge = clamp((r - R0) / fw, 0.0, 1.0) * clamp((R1 - r) / fw, 0.0, 1.0);',
+      '      float a = rc.a * edge * uRingOn; col = mix(col, rc.rgb, a); alpha = mix(alpha, 1.0, a);',
+      '    }',
+      '  }',
+      '  outColor = vec4(col, alpha);',
+      '}'
+    ].join('\n');
+    function shader(type, src) { var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+    var prog = gl.createProgram();
+    gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    var U = {}; ['uInv', 'uCam', 'uSun', 'uDay', 'uNight', 'uAux', 'uRing', 'uCity', 'uHome', 'uCities', 'uTime', 'uGrid', 'uStars', 'uBgAlpha', 'uRingOn', 'uSunLon', 'uReady'].forEach(function (n) { U[n] = gl.getUniformLocation(prog, n); });
+    var vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.bindAttribLocation(prog, 0, 'aPos'); gl.vertexAttribPointer(gl.getAttribLocation(prog, 'aPos'), 2, gl.FLOAT, false, 0, 0);
+    gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+
+    var aniso = gl.getExtension('EXT_texture_filter_anisotropic'), loaded = 0;
+    function texture(unit, src, repeat) {
+      var t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([8, 12, 20, 255]));
+      var apply = function (img) {
+        gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+      };
+      if (typeof src === 'string') { var im = new Image(); im.onload = function () { apply(im); loaded++; }; im.src = src; } else apply(src);
+      return apply;
+    }
+    texture(0, WT_TEX.day, true); texture(1, WT_TEX.night, true); texture(2, WT_TEX.aux, true);
+    gl.uniform1i(U.uDay, 0); gl.uniform1i(U.uNight, 1); gl.uniform1i(U.uAux, 2); gl.uniform1i(U.uRing, 3);
+
+    // the 24-hour ring is a flat strip drawn once on a 2D canvas: x runs east with the hours, the top edge is the inner rim
+    (function () {
+      var W = 4096, H = 256, c = document.createElement('canvas'), x = c.getContext('2d'), i; c.width = W; c.height = H;
+      for (i = 0; i < W; i++) {
+        var hour = (i + 0.5) / W * 24, el = 75 * Math.cos((hour - 12) * 15 * D2R);
+        x.fillStyle = WT.ramp(WT.SKY, el).css; x.globalAlpha = 0.9; x.fillRect(i, 0, 1, H);
+      }
+      x.globalAlpha = 1; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '700 124px "Avenir Next","Helvetica Neue","Segoe UI",Roboto,Arial,sans-serif';
+      for (i = 0; i < 24; i++) {
+        var px = i / 24 * W, lum = WT.ramp(WT.SKY, 75 * Math.cos((i - 12) * 15 * D2R)).lum, ink = lum > 0.6 ? '#101a2a' : '#ffffff';
+        x.fillStyle = ink; [px, px - W, px + W].forEach(function (q) { x.fillText(WT.pad(i), q, H / 2 + 22); });
+        x.fillRect(px - 3, 0, 6, 40); if (i === 0) x.fillRect(W - 3, 0, 6, 40);          // hour tick on the inner rim, above the numeral
+        for (var k = 1; k < 4; k++) x.fillRect(px + W / 96 * k - 1.5, 0, 3, 18);
+      }
+      x.fillStyle = 'rgba(255,255,255,.55)'; x.fillRect(0, 0, W, 5); x.fillRect(0, H - 5, W, 5);
+      texture(3, c, true);
+    })();
+
+    // ---------- state ----------
+    var localTz = WT.localTz(), listeners = {};
+    var S = {
+      home: WT.homeFromHash() || WT.cityFor(localTz), lon: 0, lat: 20, dist: 0, zoom: 1, vlon: 0, vlat: 0, fly: true, drag: null, pinch: 0,
+      grid: 0, labels: true, ring: true, spin: false, lapse: null, resetting: false, xr: null, zones: null, zb: -1
+    };
+    S.lon = S.home.lon; S.lat = WT.clamp(S.home.lat, -55, 55);
+    function emit(n, a, b) { (listeners[n] || []).forEach(function (f) { f(a, b); }); }
+    var shim = {       // the same surface the SVG watch offers, so js/page.js drives this page too
+      st: S, svg: canvas, on: function (n, f) { (listeners[n] = listeners[n] || []).push(f); return shim; },
+      setHome: function (c) { if (!c) return; S.home = c; S.fly = true; emit('home', c); refreshZones(true); },
+      local: function () { shim.setHome(WT.cityFor(localTz)); },
+      step: function (dir) {
+        var cur = WT.wrapOff(WT.offsetMin(S.home.tz, WT.now()) / 60), best = null, bd = 99;
+        S.zones.ring.forEach(function (e) { var d = ((e.slot - cur) * dir % 24 + 24) % 24; if (d > 1e-6 && d < bd) { bd = d; best = e; } });
+        if (best) shim.setHome(best.city);
+      },
+      cancelAnim: function () { S.lapse = null; S.resetting = false; setSpin(false); },
+      reset: function () { shim.cancelAnim(); var s = WT.skew() % 86400000; if (s > 43200000) s -= 86400000; if (s < -43200000) s += 86400000; WT.skew(s); S.resetting = true; },
+      timelapse: function () { if (S.lapse) { WT.skew(S.lapse.base); S.lapse = null; return; } shim.cancelAnim(); S.lapse = { t0: performance.now(), base: WT.skew() }; }
+    };
+
+    // ---------- labels ----------
+    var labBox = document.getElementById('labels'), labs = [];
+    function refreshZones(force) {
+      var ms = WT.now(), b = Math.floor(ms / 900000);
+      if (!force && b === S.zb) return; S.zb = b;
+      var z = WT.zones(ms), hs = WT.wrapOff(WT.offsetMin(S.home.tz, ms) / 60);
+      z.ring.forEach(function (e) { if (Math.abs(e.slot - hs) < 1e-6) e.city = S.home; });
+      if (!z.ring.some(function (e) { return e.city === S.home; })) z.ring.push({ city: S.home, slot: hs });       // off-hour home (Delhi, Kathmandu ...)
+      z.ring = z.ring.slice(0, 24);
+      S.zones = z; labBox.textContent = ''; labs = [];
+      var arr = new Float32Array(72);
+      z.ring.forEach(function (e, i) {
+        var v = WT.vec(e.city.lat, e.city.lon); arr.set(v, i * 3);
+        var el = document.createElement('button'); el.type = 'button'; el.className = 'lab' + (e.city === S.home ? ' home' : '');
+        el.appendChild(document.createTextNode(e.city.name)); var t = document.createElement('i'); el.appendChild(t);
+        el.addEventListener('click', function () { shim.setHome(e.city); });
+        labBox.appendChild(el); labs.push({ el: el, t: t, v: v, city: e.city, txt: '' });
+      });
+      gl.uniform3fv(U.uCity, arr); gl.uniform1i(U.uCities, z.ring.length);
+      gl.uniform1i(U.uHome, z.ring.map(function (e) { return e.city; }).indexOf(S.home));
+    }
+
+    // ---------- input ----------
+    var pts = {};
+    canvas.addEventListener('pointerdown', function (ev) {
+      pts[ev.pointerId] = { x: ev.clientX, y: ev.clientY }; canvas.setPointerCapture(ev.pointerId); canvas.classList.add('drag'); S.fly = false; S.vlon = S.vlat = 0;
+    });
+    canvas.addEventListener('pointermove', function (ev) {
+      var p = pts[ev.pointerId]; if (!p) return;
+      var ids = Object.keys(pts), dx = ev.clientX - p.x, dy = ev.clientY - p.y;
+      if (ids.length === 2) {
+        var o = pts[ids[0] === String(ev.pointerId) ? ids[1] : ids[0]], d0 = Math.hypot(p.x - o.x, p.y - o.y), d1 = Math.hypot(ev.clientX - o.x, ev.clientY - o.y);
+        if (d0 > 0) S.zoom = WT.clamp(S.zoom * d1 / d0, 0.45, 3.2);
+      } else {
+        var k = 0.18 * (S.dist - 1) / 2.9 * 900 / Math.max(480, canvas.clientHeight);
+        S.vlon = -dx * k; S.vlat = dy * k; S.lon += S.vlon; S.lat = WT.clamp(S.lat + S.vlat, -85, 85);
+      }
+      p.x = ev.clientX; p.y = ev.clientY;
+    });
+    var up = function (ev) { delete pts[ev.pointerId]; if (!Object.keys(pts).length) canvas.classList.remove('drag'); };
+    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('wheel', function (ev) { ev.preventDefault(); S.zoom = WT.clamp(S.zoom * Math.exp(-ev.deltaY * (ev.deltaMode ? 0.03 : 0.0012)), 0.45, 3.2); }, { passive: false });
+
+    // ---------- drawing ----------
+    function drawView(invVP, cam, sun, sunLon, stars, bgAlpha, t) {
+      gl.uniformMatrix4fv(U.uInv, false, invVP); gl.uniform3fv(U.uCam, cam); gl.uniform3fv(U.uSun, sun);
+      gl.uniform1f(U.uSunLon, sunLon); gl.uniform1f(U.uStars, stars); gl.uniform1f(U.uBgAlpha, bgAlpha);
+      gl.uniform1f(U.uGrid, S.grid); gl.uniform1f(U.uRingOn, S.ring ? 1 : 0); gl.uniform1f(U.uTime, t); gl.uniform1f(U.uReady, loaded >= 3 ? 1 : 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    function tick(tp) {          // shared by the page loop and the XR loop: advances time, returns sun data
+      var dt = Math.min(0.1, (tp - (S.lastTp || tp)) / 1000); S.lastTp = tp;
+      if (S.lapse) {
+        var pr = (tp - S.lapse.t0) / 10000;
+        if (pr >= 1) { WT.skew(S.lapse.base); S.lapse = null; } else WT.skew(S.lapse.base + (pr < 0.5 ? 4 * pr * pr * pr : 1 - Math.pow(-2 * pr + 2, 3) / 2) * 86400000);
+      } else if (S.resetting) { var s = WT.skew() * Math.exp(-dt / 0.16); if (Math.abs(s) < 400) { s = 0; S.resetting = false; } WT.skew(s); }
+      else if (S.spin) WT.skew(WT.skew() + dt * 3600000);            // one hour per second
+      var ms = WT.now(), sun = WT.sun(ms);
+      refreshZones(false);
+      emit('frame', S, ms);
+      return { dt: dt, ms: ms, sun: WT.vec(sun.lat, sun.lon), sunLon: sun.lon * D2R };
+    }
+    var scrub = document.getElementById('scrub');
+    function frame(tp) {
+      if (S.xr) return;
+      requestAnimationFrame(frame);
+      var T = tick(tp), dt = T.dt;
+      var dpr = Math.min(2, window.devicePixelRatio || 1), cw = Math.round(canvas.clientWidth * dpr), ch = Math.round(canvas.clientHeight * dpr);
+      if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+      // camera
+      if (S.fly) {
+        var tl = WT.clamp(S.home.lat, -55, 55), dl = ((S.home.lon - S.lon + 540) % 360) - 180, k = 1 - Math.exp(-dt / 0.35);
+        S.lon += dl * k; S.lat += (tl - S.lat) * k; if (Math.abs(dl) < 0.05 && Math.abs(tl - S.lat) < 0.05) S.fly = false;
+      } else if (!Object.keys(pts).length) { S.lon += S.vlon; S.lat = WT.clamp(S.lat + S.vlat, -85, 85); S.vlon *= Math.exp(-dt / 0.4); S.vlat *= Math.exp(-dt / 0.4); }
+      var ui = document.querySelector('main .readout').getBoundingClientRect(), shift = WT.clamp((canvas.clientHeight - ui.top) / canvas.clientHeight, 0, 0.5);
+      var th = Math.tan(16 * D2R);                                   // fit the ring to the width and the globe to the height left above the controls
+      S.dist = WT.clamp(Math.max(1.62 / (th * cw / ch), 1.22 / (th * (1 - shift))) / S.zoom, 1.9, 30);
+      var eye = WT.vec(S.lat, S.lon).map(function (v) { return v * S.dist; });
+      var P = persp(32 * D2R, cw / ch, 0.1, 80), V = lookAt(eye);
+      var Sh = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, shift, 0, 1]);             // lift the globe clear of the controls
+      var VP = mul(Sh, mul(P, V));
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, cw, ch);
+      drawView(inv(VP), eye, T.sun, T.sunLon, 1, 1, tp / 1000);
+      // labels
+      var en = norm(eye), w = canvas.clientWidth, h = canvas.clientHeight, sec = Math.floor(T.ms / 60000);
+      labs.forEach(function (L) {
+        var facing = L.v[0] * en[0] + L.v[1] * en[1] + L.v[2] * en[2], vis = S.labels ? WT.clamp((facing - (1 / S.dist) - 0.06) * 6, 0, 1) : 0;
+        if (vis <= 0) { if (L.vis !== 0) { L.vis = 0; L.el.style.opacity = 0; L.el.style.visibility = 'hidden'; } return; }
+        var q = xf(VP, L.v), x = (q[0] * 0.5 + 0.5) * w, y = (0.5 - q[1] * 0.5) * h;
+        L.el.style.transform = 'translate(' + (x + 7).toFixed(1) + 'px,' + (y - 9).toFixed(1) + 'px)';
+        if (L.vis !== vis) { L.vis = vis; L.el.style.opacity = vis.toFixed(2); L.el.style.visibility = 'visible'; }
+        if (L.sec !== sec) { L.sec = sec; L.t.textContent = WT.fmtTime(WT.local(L.city.tz, T.ms)); }
+      });
+      if (document.activeElement !== scrub) scrub.value = WT.clamp(Math.round(WT.skew() / 60000), -1440, 1440);
+    }
+
+    // ---------- WebXR: the same shader, drawn once per eye, with the globe floating in front of you ----------
+    function enterXR(mode) {
+      var GLOBE_R = 0.26;
+      navigator.xr.requestSession(mode, { optionalFeatures: ['local-floor'] }).then(function (session) {
+        var p = gl.makeXRCompatible ? gl.makeXRCompatible() : Promise.resolve();
+        return p.then(function () {
+          session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+          return session.requestReferenceSpace('local-floor').then(function (r) { return { r: r, y: 1.3 }; }, function () { return session.requestReferenceSpace('local').then(function (r) { return { r: r, y: -0.1 }; }); });
+        }).then(function (ref) {
+          S.xr = session; labBox.style.display = 'none';
+          var centre = [0, ref.y, -0.95], a = (-90 - S.home.lon) * D2R, ca = Math.cos(a), sa = Math.sin(a), R = GLOBE_R;
+          // model = translate(centre) * rotateY(a) * scale(R): turns the home meridian toward the viewer
+          var model = new Float32Array([ca * R, 0, -sa * R, 0, 0, R, 0, 0, sa * R, 0, ca * R, 0, centre[0], centre[1], centre[2], 1]), invModel = inv(model);
+          session.addEventListener('select', function () { setSpin(!S.spin); });
+          session.addEventListener('squeeze', function () { shim.reset(); });
+          session.addEventListener('end', function () { S.xr = null; labBox.style.display = ''; setSpin(false); requestAnimationFrame(frame); });
+          var loop = function (tp, xrFrame) {
+            if (!S.xr) return;
+            session.requestAnimationFrame(loop);
+            var T = tick(tp), pose = xrFrame.getViewerPose(ref.r), layer = session.renderState.baseLayer; if (!pose) return;
+            gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+            gl.clearColor(0, 0, 0, mode === 'immersive-ar' ? 0 : 1); gl.clear(gl.COLOR_BUFFER_BIT);
+            pose.views.forEach(function (view) {
+              var vp = layer.getViewport(view); gl.viewport(vp.x, vp.y, vp.width, vp.height);
+              var invVP = mul(invModel, mul(view.transform.matrix, inv(view.projectionMatrix)));       // clip space -> globe space
+              var cam = xf(invModel, [view.transform.position.x, view.transform.position.y, view.transform.position.z]);
+              drawView(invVP, cam.slice(0, 3), T.sun, T.sunLon, mode === 'immersive-ar' ? 0 : 1, mode === 'immersive-ar' ? 0 : 1, tp / 1000);
+            });
+          };
+          session.requestAnimationFrame(loop);
+        });
+      }).catch(function (e) { msg.style.display = 'flex'; msg.textContent = 'Could not start the ' + (mode === 'immersive-ar' ? 'AR' : 'VR') + ' session: ' + e.message; setTimeout(function () { msg.style.display = 'none'; }, 4000); });
+    }
+
+    // ---------- chrome ----------
+    var page = WT.page(shim), spinChip;
+    function setSpin(v) { S.spin = v; if (spinChip) { spinChip.setAttribute('aria-pressed', v); } }
+    spinChip = WT.chip(page.chips, 'Spin 1h/s', function () { var v = !S.spin; S.lapse = null; S.resetting = false; setSpin(v); }, 'Run time at one hour per second');
+    WT.chip(page.chips, 'Grid', function (b) { S.grid = S.grid ? 0 : 1; b.setAttribute('aria-pressed', !!S.grid); }, 'Meridians every 15°: one per hour of time');
+    var lc = WT.chip(page.chips, 'Labels', function (b) { S.labels = !S.labels; b.setAttribute('aria-pressed', S.labels); }, 'City labels'); lc.setAttribute('aria-pressed', true);
+    var rc = WT.chip(page.chips, 'Ring', function (b) { S.ring = !S.ring; b.setAttribute('aria-pressed', S.ring); }, '24-hour ring'); rc.setAttribute('aria-pressed', true);
+    scrub.addEventListener('input', function () { shim.cancelAnim(); WT.skew(+scrub.value * 60000); });
+    if (navigator.xr && navigator.xr.isSessionSupported) {
+      [['immersive-vr', 'Enter VR'], ['immersive-ar', 'Enter AR']].forEach(function (m) {
+        navigator.xr.isSessionSupported(m[0]).then(function (ok) { if (ok) WT.chip(page.chips, m[1], function () { enterXR(m[0]); }, 'Trigger toggles the one-hour-per-second spin; squeeze returns to now'); }).catch(function () { });
+      });
+    }
+    refreshZones(true);
+    WT.nav('globe.html');
+    requestAnimationFrame(frame);
+    window.globe = { S: S, shim: shim, enterXR: enterXR };
+  })();
+  </script>
+</body>
+</html>
