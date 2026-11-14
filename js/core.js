@@ -232,7 +232,29 @@
     ['planisphere.html', 'Planisphere', 'Flat map and meeting planner'],
     ['worldtimer.html', 'Original', 'The first version']
   ];
-  WT.nav = function (current) {
+  // ---------- embed mode: the page is shown inside another page's <iframe src="...?embed"> ----------
+  // No nav or hint, sized by width rather than by window height, the wheel is left to the host page, and the page tells
+  // its host how tall it wants to be. Pages with no fixed theme go transparent and follow the host's light/dark setting
+  // (localStorage 'theme' = 'dark' | 'light' on the same origin, or a {type:'wt-theme', dark} message).
+  WT.embed = /[?&]embed\b/.test(location.search) && window.parent !== window;
+  WT.embedPost = function (msg) { if (WT.embed) { msg.page = location.pathname.split('/').pop() || 'index.html'; try { window.parent.postMessage(msg, '*'); } catch (e) { } } };
+  WT.embedHeight = function (h) { WT.embedPost({ type: 'wt-embed', height: Math.ceil(h) }); };
+  WT.embedAuto = function () {          // report the document's own height whenever it changes
+    var last = 0, send = function () { var h = document.body.getBoundingClientRect().height; if (Math.abs(h - last) > 0.5) { last = h; WT.embedHeight(h); } };
+    if (window.ResizeObserver) new ResizeObserver(send).observe(document.body);
+    window.addEventListener('load', send); send();
+  };
+  if (WT.embed) (function () {
+    var root = document.documentElement, fixed = root.hasAttribute('data-theme');      // Nocturne, Globe and Planisphere are always dark
+    root.classList.add('embed'); if (fixed) root.classList.add('embed-dark');
+    function theme(dark) { if (!fixed) root.setAttribute('data-theme', dark ? 'dark' : 'light'); }
+    var t = null; try { t = localStorage.getItem('theme'); } catch (e) { }
+    theme(t === 'dark' || (t !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches));
+    window.addEventListener('message', function (ev) { if (ev.source === window.parent && ev.data && ev.data.type === 'wt-theme') theme(!!ev.data.dark); });
+  })();
+
+  WT.nav = function (current, ownHeight) {
+    if (WT.embed) { if (!ownHeight) WT.embedAuto(); return null; }
     var nav = document.createElement('nav');
     nav.className = 'wt-nav'; nav.setAttribute('aria-label', 'World Timer variants');
     WT.VARIANTS.forEach(function (v) {

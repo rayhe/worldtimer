@@ -46,12 +46,17 @@ Your place is worked out in two tiers:
 1. **Time zone, from the device settings.** This is the default and needs no permission. The home city is that zone's city, and sunrise, sunset and the map marker use its coordinates.
 2. **Precise position, only if you ask.** "Locate me" requests the browser's geolocation. The fix is rounded to about a kilometre, kept in this browser's local storage only, never put in the URL, and dropped automatically if the device's time zone changes. Press the chip again to forget it.
 
+## Embedding
+
+Any page can be shown inside another page with `<iframe src="chrono.html?embed">`. In that mode the variant nav and hint are hidden, the page is sized by its width, the mouse wheel is left to the host page, and the page posts `{type: 'wt-embed', height}` to its parent so the frame can be sized to fit. Heritage, Chrono and Atelier go transparent and follow the host's theme (`localStorage.theme` on the same origin, or a `{type: 'wt-theme', dark}` message); the other three stay dark. `js/site.js` is an empty hook for a hosting site's own overrides, such as extra nav links.
+
 ## Structure
 
 ```
 js/core.js        virtual clock, time-zone and solar maths, city data, variant nav
 js/watch.js       the SVG watch engine shared by Heritage, Chrono, Atelier and Nocturne
 js/page.js        digital readout, chips, city search, keyboard, URL state
+js/site.js        empty hook for a hosting site's overrides
 js/land.js        land outlines for the dial map
 js/earth-tex.js   day, night and relief textures for Globe and Planisphere
 css/base.css      shared page styles

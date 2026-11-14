@@ -490,6 +490,7 @@
       host.addEventListener('pointerup', up); host.addEventListener('pointercancel', up);
       host.addEventListener('pointerleave', function () { if (!st.drag) hideTip(); });
       host.addEventListener('wheel', function (ev) {
+        if (WT.embed) return;                // embedded: the wheel scrolls the host page
         ev.preventDefault(); cancelAnim();
         var dm = (Math.abs(ev.deltaY) > Math.abs(ev.deltaX) ? ev.deltaY : ev.deltaX) * (ev.deltaMode ? 20 : 1) * (ev.shiftKey ? 6 : 0.6);
         WT.skew(WT.skew() + dm * 60000); emit('scrub');

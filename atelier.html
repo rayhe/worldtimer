@@ -30,8 +30,11 @@
     .sw { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(128, 128, 128, .55); flex: none; }
     .opt svg { width: 13px; height: 34px; flex: none; }
     .opt svg path { fill: currentColor; }
+    html.embed .bench { grid-template-columns: minmax(0, 1fr); }      /* embedded: just the watch, wearing a random preset */
+    html.embed .bench .wt { width: min(94vw, 560px); }
+    html.embed .panel { display: none; }
     @media (min-width: 940px) {
-      .bench { grid-template-columns: minmax(0, 1fr) 372px; }
+      html:not(.embed) .bench { grid-template-columns: minmax(0, 1fr) 372px; }
       .bench .wt { width: min(100%, calc(100dvh - 215px), 720px); }
       .panel { max-height: calc(100dvh - 76px); overflow: auto; }
     }
@@ -56,6 +59,7 @@
     </div>
   </main>
   <script src="js/core.js"></script>
+  <script src="js/site.js"></script>
   <script src="js/land.js"></script>
   <script src="js/watch.js"></script>
   <script src="js/page.js"></script>
@@ -88,6 +92,11 @@
     };
     var state = {}, k, h = WT.hash.get();
     for (k in DEF) state[k] = OPTS.some(function (o) { return o[0] === k && o[2].indexOf(h[k]) >= 0; }) ? h[k] : DEF[k];
+    if (WT.embed && !location.hash) {       // nothing asked for: show off a preset
+      var names = Object.keys(PRESETS), pick = names[Math.floor(Math.random() * names.length)];
+      for (k in DEF) state[k] = PRESETS[pick][k] || DEF[k];
+      WT.embedPost({ type: 'wt-embed-label', label: pick });
+    }
 
     function toCfg() {
       var c = {}; for (var k in state) c[k] = state[k];

@@ -28,6 +28,9 @@
     .lab.home { color: #ffb347; }
     .slider { display: flex; align-items: center; gap: 10px; justify-content: center; margin-top: 8px; font-size: .68rem; color: var(--muted); }
     .slider input { width: min(60vw, 320px); accent-color: #ffb347; }
+    html.embed, html.embed body { height: 100%; }      /* embedded: fill the frame; the height is requested from the host below */
+    html.embed main { flex: 1; }
+    html.embed #gl { touch-action: pan-y; }
     #msg { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; z-index: 3; font-size: .9rem; }
   </style>
 </head>
@@ -46,6 +49,7 @@
     <p class="hint">Drag to turn the Earth · scroll or pinch to zoom · click a city to make it home · the ring is fixed to the sun: its 12 always faces noon</p>
   </main>
   <script src="js/core.js"></script>
+  <script src="js/site.js"></script>
   <script src="js/earth-tex.js"></script>
   <script src="js/page.js"></script>
   <script>
@@ -53,7 +57,7 @@
     'use strict';
     var D2R = Math.PI / 180, canvas = document.getElementById('gl'), msg = document.getElementById('msg');
     var gl = canvas.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: true, xrCompatible: true, powerPreference: 'high-performance' });
-    if (!gl) { msg.style.display = 'flex'; msg.textContent = 'This variant needs WebGL 2, which this browser or device does not provide.'; WT.nav('globe.html'); return; }
+    if (!gl) { msg.style.display = 'flex'; msg.textContent = 'This variant needs WebGL 2, which this browser or device does not provide.'; WT.embedPost({ type: 'wt-embed-fail' }); WT.nav('globe.html'); return; }
 
     // ---------- tiny column-major mat4 kit ----------
     function mul(a, b) { var o = new Float32Array(16); for (var c = 0; c < 4; c++) for (var r = 0; r < 4; r++) o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3]; return o; }
@@ -274,7 +278,7 @@
     });
     var up = function (ev) { delete pts[ev.pointerId]; if (!Object.keys(pts).length) canvas.classList.remove('drag'); };
     canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
-    canvas.addEventListener('wheel', function (ev) { ev.preventDefault(); S.zoom = WT.clamp(S.zoom * Math.exp(-ev.deltaY * (ev.deltaMode ? 0.03 : 0.0012)), 0.45, 3.2); }, { passive: false });
+    canvas.addEventListener('wheel', function (ev) { if (WT.embed) return; ev.preventDefault(); S.zoom = WT.clamp(S.zoom * Math.exp(-ev.deltaY * (ev.deltaMode ? 0.03 : 0.0012)), 0.45, 3.2); }, { passive: false });
 
     // ---------- drawing ----------
     function drawView(invVP, cam, sun, sunLon, stars, bgAlpha, t) {
@@ -377,7 +381,8 @@
       });
     }
     refreshZones(true);
-    WT.nav('globe.html');
+    WT.nav('globe.html', true);
+    if (WT.embed) { var wantHeight = function () { WT.embedHeight(WT.clamp(window.innerWidth * 0.86, 480, 720)); }; window.addEventListener('resize', wantHeight); wantHeight(); }
     requestAnimationFrame(frame);
     window.globe = { S: S, shim: shim, enterXR: enterXR };
   })();

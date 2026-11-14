@@ -32,6 +32,7 @@
     .legend { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; font-size: .66rem; color: var(--muted); margin-top: 6px; }
     .legend span::before { content: ''; display: inline-block; width: .8em; height: .8em; border-radius: 2px; margin-right: .45em; vertical-align: -1px; background: var(--c); }
     .readout { min-height: 0; }
+    html.embed .sheet { width: min(100%, 880px); min-width: 0; }
     @media (max-width: 600px) { .pin { font-size: 8px; } .pin i { display: none; } }
   </style>
 </head>
@@ -51,6 +52,7 @@
     <p class="hint">Drag the timeline to move through the day · click a dot on the map to add or remove that city's row · a green bar above the rows marks hours when everyone is awake</p>
   </main>
   <script src="js/core.js"></script>
+  <script src="js/site.js"></script>
   <script src="js/earth-tex.js"></script>
   <script src="js/page.js"></script>
   <script>
@@ -188,7 +190,7 @@
     planEl.addEventListener('pointermove', function (ev) { if (dragX == null) return; WT.skew(WT.skew() - (ev.clientX - dragX) / planEl._pph * 3600000); dragX = ev.clientX; });
     var end = function () { dragX = null; planEl.classList.remove('drag'); };
     planEl.addEventListener('pointerup', end); planEl.addEventListener('pointercancel', end);
-    planEl.addEventListener('wheel', function (ev) { ev.preventDefault(); shim.cancelAnim(); WT.skew(WT.skew() + (Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY) * (ev.deltaMode ? 20 : 1) * 30000); }, { passive: false });
+    planEl.addEventListener('wheel', function (ev) { if (WT.embed) return; ev.preventDefault(); shim.cancelAnim(); WT.skew(WT.skew() + (Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY) * (ev.deltaMode ? 20 : 1) * 30000); }, { passive: false });
 
     // ---------- loop ----------
     var lastMin = -1;
