@@ -11,7 +11,7 @@
     :root { --chrome: 250px; }
     .wt-city.away text { fill: #ff6a4d; font-weight: 700; }
     .wt-city.wt-pip.away circle:last-child { fill: #ff6a4d; r: 5px; }
-    .orb-sat { cursor: grab; }
+    .orb-sat { cursor: grab; touch-action: none; }      /* draggable by touch even where the page around it scrolls */
     .wt.dragging .orb-sat { cursor: grabbing; }
     #homeLine b { color: var(--fg); font-weight: 600; }
   </style>
