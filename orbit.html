@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>World Timer · Orbit</title>
+  <meta name="description" content="A travelling-time world timer: a satellite counter glides around a fixed ring of cities showing local time, while a window at 12 keeps home time.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%2317191d'/%3E%3Ccircle cx='32' cy='32' r='21' fill='%231e6aa8'/%3E%3Cpath d='M32 32V16M32 32l10 6' stroke='%23fff' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M28 3h8l-4 7z' fill='%231e90ff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/base.css">
+  <style>
+    :root { --chrome: 250px; }
+    .wt-city.away text { fill: #ff6a4d; font-weight: 700; }
+    .wt-city.wt-pip.away circle:last-child { fill: #ff6a4d; r: 5px; }
+    .orb-sat { cursor: grab; }
+    .wt.dragging .orb-sat { cursor: grabbing; }
+    #homeLine b { color: var(--fg); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="wt" id="watch"></div>
+    <div class="readout">
+      <div class="time" id="time">00:00:00</div>
+      <div class="date" id="date"></div>
+      <div class="zone" id="zone"></div>
+      <div class="zone" id="homeLine"></div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <p class="hint">The counter shows local time and its red arrow points at the city · click a city, press the pusher at 9 or drag the counter to travel, and the hour hand moves with it · the window at 12 keeps home time on 24 hours<span class="kb"> · <kbd>←</kbd><kbd>→</kbd> one zone · <kbd>/</kbd> find city</span></p>
+  </main>
+  <script src="js/core.js"></script>
+  <script src="js/site.js"></script>
+  <script src="js/land.js"></script>
+  <script src="js/watch.js"></script>
+  <script src="js/page.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var D2R = Math.PI / 180, RS = 130, RO = 184, RED = '#e8402a';      // counter radius, orbit radius
+    var LOOKS = {
+      'Bleu': { case: 'steel', dial: 'navy', map: 'relief', hands: 'leaf' },
+      'Anthracite': { case: 'black', dial: 'noir', map: 'engraved', hands: 'sword' },
+      'Nacre': { case: 'rose', dial: 'ivory', map: 'engraved', hands: 'leaf' },
+      'Vert': { case: 'bronze', dial: 'forest', map: 'relief', hands: 'dauphine' }
+    };
+    var h0 = WT.hash.get(), lookName = h0.look in LOOKS ? h0.look : 'Bleu', look = LOOKS[lookName];
+    function byName(n) { return WT.CITIES.filter(function (c) { return c.name === n; })[0]; }
+    var away = WT.homeFromHash() || (h0.base && byName(h0.base)) || WT.localCity();      // where the counter is: local time
+    function mod(a, n) { return ((a % n) + n) % n; }
+    function f(n) { return Math.round(n * 100) / 100; }
+
+    var w = WT.createWatch(document.getElementById('watch'), {
+      home: (h0.base && byName(h0.base)) || WT.localCity(),          // home: the city at 12, whose hour shows in the window
+      case: look.case, dial: look.dial, map: look.map, mapR: 336, dialR: 385, ring: 'none', indices: 'none', track: 'none',
+      mainHands: false, seconds: false, pointer: false, earthDrag: false, tapLapse: false,
+      zoneAngle: -90, zoneLabel: 'Pusher: move the counter one time zone east', cityClick: setAway, zoneStep: stepAway
+    });
+    var E = w.E, P = {}, listeners = [], drag = null, lastT = 0, skyMin = -1;
+    var S = { aOff: WT.offsetMin(away.tz, WT.now()) / 60, mOff: 0, disc: null };
+    S.mOff = mod(S.aOff * 60, 60);
+
+    function decorate() {
+      var G = w.G, C = WT.CASES[w.cfg.case], defs = w.svg.querySelector('defs'), i, g, t, p;
+      var dark = WT.hex(C[1])[0] < 90, engr = dark ? C[0] : C[3];
+      function grad(id, stops) { var gr = E('radialGradient', { id: id, cx: '42%', cy: '34%', r: '75%' }, defs); stops.forEach(function (s) { var e = E('stop', { offset: s[0] }, gr); e.style.stopColor = s[1]; if (s[2] != null) e.style.stopOpacity = s[2]; }); }
+      var D = WT.DIALS[w.cfg.dial];
+      grad('orbFace', [[0, WT.mix(D.dial0, '#ffffff', 0.2)], [0.55, D.dial0], [1, WT.mix(D.dial0, D.dial1, 0.6)]]);      // a shade lighter than the dial, so it reads as a separate disc
+      var sh = E('radialGradient', { id: 'orbShadow' }, defs); [[0.68, 0.6], [1, 0]].forEach(function (s) { var e = E('stop', { offset: s[0] }, sh); e.style.stopColor = '#000'; e.style.stopOpacity = s[1]; });
+      E('path', { d: w.wedge(343, 381, -8.6, 8.6) }, E('clipPath', { id: 'orbWin' }, defs));
+      E('path', { id: 'orbTxL', d: arcPath(354, -29, -11) }, defs); E('path', { id: 'orbTxR', d: arcPath(354, 11, 29) }, defs);
+
+      // rehaut: a metal ring between the map and the cities, with the home-time window cut in at 12
+      var rh = E('g', { class: 'orb-rehaut' }, G.dial);
+      for (i = 0; i < 120; i++) {
+        var lobe = Math.pow(0.5 + 0.5 * Math.cos(2 * (i * 3 + 1.5 - 60) * D2R), 2);
+        E('path', { d: w.wedge(338, 385, i * 3 - 0.2, i * 3 + 3.2), fill: WT.mix(C[2], C[1], lobe) }, rh);
+      }
+      E('circle', { r: 338, fill: 'none', stroke: C[3], 'stroke-width': 2.5 }, rh);
+      E('circle', { r: 340.5, fill: 'none', stroke: C[0], 'stroke-width': 1, opacity: 0.5 }, rh);
+      for (i = 0; i < 24; i++) if (i > 2 && i < 22) { p = w.pol(361.5, i * 15); E('circle', { cx: p[0], cy: p[1], r: 3, fill: engr, opacity: 0.7 }, rh); }
+      [['orbTxL', 'HOME'], ['orbTxR', 'TIME']].forEach(function (x) {
+        t = E('text', { 'font-size': 14, 'font-weight': 700, 'letter-spacing': 4, fill: engr, opacity: 0.85, 'text-anchor': 'middle', 'font-family': '"Avenir Next","Helvetica Neue","Segoe UI",Roboto,Arial,sans-serif' }, rh);
+        E('textPath', { href: '#' + x[0], startOffset: '50%' }, t).textContent = x[1];
+      });
+      // the window: a 24-hour disc turns underneath and jumps on the hour
+      P.winBg = E('path', { d: w.wedge(343, 381, -8.6, 8.6), fill: '#0d1016' }, rh);
+      g = E('g', { 'clip-path': 'url(#orbWin)' }, rh);
+      P.disc = E('g', { 'font-size': 28, 'font-weight': 700, 'text-anchor': 'middle', 'font-family': '"Avenir Next","Helvetica Neue","Segoe UI",Roboto,Arial,sans-serif' }, g);
+      for (i = 0; i < 24; i++) E('text', { y: 10, transform: 'rotate(' + (i * 15) + ') translate(0 -362)' }, P.disc).textContent = WT.pad(i);
+      E('path', { d: w.wedge(343, 381, -8.6, 8.6), fill: 'none', stroke: '#000', 'stroke-width': 4, opacity: 0.35 }, g);
+      E('path', { d: w.wedge(343, 381, -8.6, 8.6), fill: 'none', stroke: C[0], 'stroke-width': 1.5, opacity: 0.9 }, rh);
+
+      // where the counter's city really is on the map
+      p = w.mapXY(away.lat, away.lon);
+      P.dot = E('circle', { r: 5, fill: RED, stroke: '#fff', 'stroke-width': 1.6, 'pointer-events': 'none' }, G.map);
+
+      // the travelling counter: floats over the map, stays upright, and carries its own arrow round its rim
+      P.sh = E('circle', { r: RS + 22, fill: 'url(#orbShadow)', 'pointer-events': 'none' }, G.over);
+      P.sat = E('g', { class: 'orb-sat', role: 'img', 'aria-label': 'Local time counter' }, G.over);
+      P.arrow = E('g', {}, P.sat);
+      E('path', { d: 'M-15 ' + (-(RS - 4)) + 'L15 ' + (-(RS - 4)) + 'L0 ' + (-(RS + 23)) + 'Z', fill: RED, stroke: 'rgba(0,0,0,.45)', 'stroke-width': 1, 'stroke-linejoin': 'round' }, P.arrow);
+      E('circle', { r: RS, fill: 'url(#orbFace)', stroke: C[1], 'stroke-width': 3.5 }, P.sat);
+      E('circle', { r: RS - 3, fill: 'none', stroke: 'rgba(0,0,0,.35)', 'stroke-width': 1.5 }, P.sat);
+      var tk = E('g', { stroke: 'var(--ink)' }, P.sat);
+      for (i = 0; i < 60; i++) { var maj = i % 5 === 0, a = w.pol(RS - (maj ? 15 : 11), i * 6), b = w.pol(RS - 6, i * 6); E('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], 'stroke-width': maj ? 2.2 : 1, opacity: maj ? 0.95 : 0.55 }, tk); }
+      var nm = E('g', { fill: 'var(--ink)', 'font-size': 25, 'font-weight': 600, 'text-anchor': 'middle', 'font-family': '"Avenir Next","Helvetica Neue","Segoe UI",Roboto,Arial,sans-serif' }, P.sat);
+      for (i = 1; i <= 12; i++) { p = w.pol(RS - 36, i * 30); E('text', { x: p[0], y: p[1] + 9 }, nm).textContent = i; }
+      P.sky = E('circle', { cy: 50, r: 10.5, stroke: C[1], 'stroke-width': 2 }, P.sat);                   // day or night where the counter is
+      function hand(L, W, T) {
+        var s = WT.handShape(look.hands, L, W, T), hg = E('g', {}, P.sat);
+        E('path', { d: s.d, transform: 'translate(2 3)', opacity: 0.28, 'fill-rule': s.evenodd ? 'evenodd' : null }, hg);
+        E('path', { d: s.d, fill: 'var(--hand)', stroke: 'rgba(0,0,0,.45)', 'stroke-width': 0.8, 'fill-rule': s.evenodd ? 'evenodd' : null }, hg);
+        if (s.facet) E('path', { d: s.facet, fill: 'rgba(0,0,0,.2)' }, hg);
+        if (s.lume) E('path', { d: s.lume, fill: 'var(--lume)' }, hg);
+        return hg;
+      }
+      P.hh = hand(68, 8, 11); P.mh = hand(104, 6, 14);
+      E('circle', { r: 6.5, fill: C[1], stroke: 'rgba(0,0,0,.5)', 'stroke-width': 0.8 }, P.sat);
+      P.sat.addEventListener('pointerdown', grab);
+      S.disc = null; skyMin = -1; mark();
+    }
+    function arcPath(r, a0, a1) { var p0 = w.pol(r, a0), p1 = w.pol(r, a1); return 'M' + p0 + 'A' + r + ' ' + r + ' 0 0 1 ' + p1; }
+
+    // ----- travelling -----
+    function mark() {
+      var slot = WT.wrapOff(WT.offsetMin(away.tz, WT.now()) / 60);
+      w.cityEls.forEach(function (c) { c.g.classList.toggle('away', Math.abs(c.e.slot - slot) < 1e-6); });
+      if (P.dot) { var p = w.mapXY(away.lat, away.lon); P.dot.setAttribute('cx', f(p[0])); P.dot.setAttribute('cy', f(p[1])); P.dot.setAttribute('display', away.guessed ? 'none' : null); }
+    }
+    function setAway(city) { if (!city) return; away = city; shimSt.home = city; mark(); listeners.forEach(function (fn) { fn(city); }); }
+    function stepAway(dir) {
+      var cur = WT.wrapOff(WT.offsetMin(away.tz, WT.now()) / 60), best = null, bd = 99;
+      w.zones.ring.forEach(function (e) { var d = mod((e.slot - cur) * dir, 24); if (d > 1e-6 && d < bd) { bd = d; best = e; } });
+      if (best) setAway(best.city);
+    }
+    function angleOf(ev) { var r = w.svg.getBoundingClientRect(); return Math.atan2((ev.clientX - r.left) / r.width - 0.5, -((ev.clientY - r.top) / r.height - 0.5)) / D2R; }
+    function grab(ev) {             // drag the counter round the ring; it settles on the nearest zone
+      if (ev.button) return;
+      ev.stopPropagation(); ev.preventDefault();
+      drag = { a: angleOf(ev), moved: 0 }; w.host.classList.add('dragging');
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', drop); window.addEventListener('pointercancel', drop);
+    }
+    function move(ev) { var a = angleOf(ev), da = mod(a - drag.a + 180, 360) - 180; drag.a = a; drag.moved += Math.abs(da); S.aOff -= da / 15; }
+    function drop() {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', drop); window.removeEventListener('pointercancel', drop);
+      var moved = drag.moved; drag = null; w.host.classList.remove('dragging');
+      if (moved < 2) return;
+      var cur = WT.wrapOff(S.aOff), best = null, bd = 99;
+      w.cityEls.forEach(function (c) { var d = Math.abs(mod(c.e.slot - cur + 12, 24) - 12); if (d < bd) { bd = d; best = c; } });
+      if (best) setAway(best.e.city);
+    }
+
+    var homeLine = document.getElementById('homeLine');
+    w.on('zones', mark);
+    w.on('frame', function (st, ms) {
+      var now = performance.now(), dt = Math.min(0.1, (now - lastT) / 1000 || 0.016), k = 1 - Math.exp(-dt / 0.2); lastT = now;
+      var offMin = WT.offsetMin(away.tz, ms), tgt = offMin / 60;
+      if (!drag) {
+        tgt += 24 * Math.round((S.aOff - tgt) / 24);
+        S.aOff = Math.abs(tgt - S.aOff) < 0.0008 ? tgt : S.aOff + (tgt - S.aOff) * k;
+        var mt = mod(offMin, 60), dm = mod(mt - S.mOff + 30, 60) - 30; S.mOff = Math.abs(dm) < 0.02 ? mt : mod(S.mOff + dm * k, 60);
+      }
+      var ang = mod((st.off - S.aOff) * 15, 360), p = w.pol(RO, ang), utcH = mod(ms, 86400000) / 3600000;
+      P.sat.setAttribute('transform', 'translate(' + p[0] + ' ' + p[1] + ')'); P.sh.setAttribute('transform', 'translate(' + (p[0] + 7) + ' ' + (p[1] + 13) + ')');
+      P.arrow.setAttribute('transform', 'rotate(' + f(ang) + ')');
+      P.hh.setAttribute('transform', 'rotate(' + f(mod(utcH + S.aOff, 12) * 30) + ')');
+      P.mh.setAttribute('transform', 'rotate(' + f(mod(mod(ms, 3600000) / 60000 + S.mOff, 60) * 6) + ')');
+      S.ang = ang;
+      // home hour: the disc jumps on the hour
+      var hl = WT.local(st.home.tz, ms), dA = hl.h * 15;
+      if (S.disc == null) S.disc = dA;
+      var dd = mod(dA - S.disc + 180, 360) - 180; S.disc = Math.abs(dd) < 0.05 ? dA : mod(S.disc + dd * (1 - Math.exp(-dt / 0.07)), 360);
+      P.disc.setAttribute('transform', 'rotate(' + f(-S.disc) + ')');
+      var min = Math.floor(ms / 60000) + away.name + st.home.name;
+      if (min !== skyMin) {
+        skyMin = min;
+        var sun = WT.sun(ms), ch = WT.ramp(WT.SKY, WT.elevation(sun, st.home.lat, st.home.lon)), ca = WT.ramp(WT.SKY, WT.elevation(sun, away.lat, away.lon));
+        P.winBg.setAttribute('fill', ch.css); P.disc.setAttribute('fill', ch.lum > 0.58 ? '#141a24' : '#ffffff'); P.sky.setAttribute('fill', ca.css);
+        var diff = offMin - hl.off, ad = Math.abs(diff);
+        homeLine.textContent = 'Home · ';
+        homeLine.appendChild(WT.el('b', '', st.home.name + ' ' + WT.fmtTime(hl)));
+        homeLine.appendChild(document.createTextNode(diff === 0 ? ' · same time' : ' · local is ' + Math.floor(ad / 60) + 'h' + (ad % 60 ? ' ' + (ad % 60) + 'm' : '') + (diff > 0 ? ' ahead' : ' behind')));
+      }
+    });
+    decorate(); w.on('build', decorate);
+
+    // js/page.js drives the readout, search and keys; for it, "home" is the counter's city
+    var shimSt = { home: away }, shim = {
+      st: shimSt, get svg() { return w.svg; },
+      on: function (n, fn) { if (n === 'frame') w.on('frame', function (st, ms) { fn(shimSt, ms); }); else if (n === 'home') listeners.push(fn); else w.on(n, fn); return shim; },
+      setHome: setAway, step: stepAway, local: function () { setAway(WT.localCity()); },
+      reset: w.reset, timelapse: w.timelapse, cancelAnim: w.cancelAnim
+    };
+    var page = WT.page(shim), names = Object.keys(LOOKS);
+    var bHome = WT.chip(page.chips, 'Set as home', function () { w.setHome(away); WT.hash.set({ base: away.tz === WT.localTz() ? null : away.name }); skyMin = -1; }, 'Make the counter’s city the home city at 12');
+    listeners.push(function () { skyMin = -1; });
+    w.on('frame', function (st) { bHome.hidden = WT.offsetMin(st.home.tz, WT.now()) === WT.offsetMin(away.tz, WT.now()); });
+    WT.chip(page.chips, lookName, function (b) {
+      lookName = names[(names.indexOf(lookName) + 1) % names.length]; look = LOOKS[lookName]; b.textContent = lookName;
+      WT.hash.set({ look: lookName === 'Bleu' ? null : lookName }); w.set({ case: look.case, dial: look.dial, map: look.map });
+    }, 'Change the look');
+    WT.nav('orbit.html');
+    window.orbit = { w: w, S: S, P: P, get away() { return away; }, setAway: setAway };
+  })();
+  </script>
+</body>
+</html>

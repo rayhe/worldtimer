@@ -54,7 +54,10 @@
   var DEF = {
     case: 'steel', dial: 'navy', hands: 'baton', handFinish: 'auto', indices: 'arabic', numerals: 'sans', map: 'relief',
     ring: 'sky', motion: 'sweep', seconds: true, track: 'ticks', pushers: false, glow: false, mapR: 216, skipIdx: [],
-    interactive: true, tapLapse: true, crownReset: true, crownLabel: 'Crown: back to now'
+    interactive: true, tapLapse: true, crownReset: true, crownLabel: 'Crown: back to now',
+    // for pages that build their own display on the engine (see orbit.html):
+    dialR: 321, mainHands: true, pointer: true, earthDrag: true, zoneAngle: -60, zoneLabel: 'Zone pusher: advance to the next city east',
+    cityClick: null, zoneStep: null       // callbacks that replace 'make this city home' and 'home steps one zone east'
   };
 
   // ---------- hands (drawn pointing to 12; L = length, W = half width, T = tail) ----------
@@ -192,7 +195,7 @@
       E('rect', { x: 506, y: -36, width: 44, height: 72, rx: 7, fill: url('knurl'), stroke: 'var(--c3)', 'stroke-width': 1.2 }, cri);
       for (i = 0; i < 9; i++) E('line', { x1: 510, x2: 546, y1: -30 + i * 7.5, y2: -30 + i * 7.5, stroke: 'var(--c3)', 'stroke-width': 1.4, opacity: 0.55 }, cri);
       E('title', {}, cr).textContent = cfg.crownLabel;
-      pusher(-60, 'zone', 46, 30, 'Zone pusher: advance to the next city east');
+      pusher(cfg.zoneAngle, 'zone', 46, 30, cfg.zoneLabel);
       if (cfg.pushers) { pusher(60, 'start', 50, 36, 'Start / stop'); pusher(120, 'reset', 50, 36, 'Fly back while running / reset when stopped'); }
       // bezel: wedges of brushed metal with two polished highlights
       for (i = 0; i < 120; i++) {
@@ -212,32 +215,33 @@
       // --- sun frame: 24 hour ring ---
       G.ring = E('g', { class: 'wt-ring24' }, svg);
       G.sky = E('g', {}, G.ring);
-      for (i = 0; i < 96; i++) E('path', { d: wedge(322, 385, -(i + 1) * 3.75 - 0.15, -i * 3.75 + 0.15) }, G.sky);   // segment i covers hours i/4 .. (i+1)/4
-      E('circle', { r: 385, fill: 'none', stroke: '#000', 'stroke-width': 2, opacity: 0.45 }, G.ring);
+      for (i = 0; cfg.ring !== 'none' && i < 96; i++) E('path', { d: wedge(322, 385, -(i + 1) * 3.75 - 0.15, -i * 3.75 + 0.15) }, G.sky);   // segment i covers hours i/4 .. (i+1)/4
+      if (cfg.ring !== 'none') E('circle', { r: 385, fill: 'none', stroke: '#000', 'stroke-width': 2, opacity: 0.45 }, G.ring);
       G.nums = E('g', { 'font-family': SANS, 'font-weight': 700, 'font-size': 27, 'text-anchor': 'middle' }, G.ring);
-      for (i = 0; i < 24; i++) {
+      for (i = 0; cfg.ring !== 'none' && i < 24; i++) {
         t = E('text', { id: U('n' + i), y: 9.5, class: 'wt-num' }, G.nums); t.textContent = WT.pad(i);
         numEls.push({ el: t, h: i, flip: null });
       }
       // home pointer
-      G.pointer = E('path', { id: U('ptr'), d: 'M-13 -402L13 -402L0 -380Z', fill: 'var(--accent)', stroke: 'rgba(0,0,0,.35)', 'stroke-width': 1, class: 'wt-pointer' }, svg);
+      G.pointer = E('path', { id: U('ptr'), d: 'M-13 -402L13 -402L0 -380Z', fill: 'var(--accent)', stroke: 'rgba(0,0,0,.35)', 'stroke-width': 1, class: 'wt-pointer', display: cfg.pointer ? null : 'none' }, svg);
 
       // --- dial ---
       G.dial = E('g', { class: 'wt-dial' }, svg);
-      E('circle', { r: 321, fill: url('dial') }, G.dial);
+      var DR = cfg.dialR;
+      E('circle', { r: DR, fill: url('dial') }, G.dial);
       if (D.burst) {
         G.burst = E('g', { class: 'wt-burst' }, G.dial);
         for (i = 0; i < 90; i++) {
           var c2 = Math.cos((i * 4 + 2) * D2R), v = Math.pow(Math.abs(c2), 3) * D.burst * (1 + 0.35 * Math.sin(i * 12.9898) * Math.sin(i * 4.1));
-          E('path', { d: wedge(0, 321, i * 4 - 0.1, i * 4 + 4.1), fill: c2 > 0 ? '#fff' : '#000', opacity: f(Math.max(0, c2 > 0 ? v * 1.5 : v)) }, G.burst);
+          E('path', { d: wedge(0, DR, i * 4 - 0.1, i * 4 + 4.1), fill: c2 > 0 ? '#fff' : '#000', opacity: f(Math.max(0, c2 > 0 ? v * 1.5 : v)) }, G.burst);
         }
       }
-      E('circle', { r: 321, fill: url('vig'), opacity: 0.55 }, G.dial);
-      E('circle', { r: 321.5, fill: 'none', stroke: url('metalR'), 'stroke-width': 3 }, G.dial);
+      E('circle', { r: DR, fill: url('vig'), opacity: 0.55 }, G.dial);
+      E('circle', { r: DR + 0.5, fill: 'none', stroke: url('metalR'), 'stroke-width': 3 }, G.dial);
       // minute track
       G.track = E('g', { stroke: 'var(--ink)', class: 'wt-track' }, G.dial);
       if (cfg.track === 'railroad') { E('circle', { r: 314, fill: 'none', 'stroke-width': 1.3 }, G.track); E('circle', { r: 300, fill: 'none', 'stroke-width': 1.3 }, G.track); }
-      for (i = 0; i < 60; i++) {
+      for (i = 0; cfg.track !== 'none' && i < 60; i++) {
         var maj = i % 5 === 0, a0 = pol(cfg.track === 'railroad' ? 300 : (maj ? 296 : 302), i * 6), a1 = pol(314, i * 6);
         E('line', { x1: a0[0], y1: a0[1], x2: a1[0], y2: a1[1], 'stroke-width': maj ? 3.2 : 1.4, opacity: maj ? 0.95 : 0.6 }, G.track);
       }
@@ -308,8 +312,7 @@
         if (sh.lume) glow(E('path', { id: U('h' + name), d: sh.lume, fill: 'var(--lume)', class: 'lume' }, hg), frame, L * 0.55, 0);
         return [hg, sg];
       }
-      G.h = hand('hour', 196, 15, 26, 'h');
-      G.m = hand('minute', 290, 11, 34, 'm');
+      if (cfg.mainHands) { G.h = hand('hour', 196, 15, 26, 'h'); G.m = hand('minute', 290, 11, 34, 'm'); }
       G.over = E('g', { class: 'wt-over' }, svg);         // pages add extra hands here (chronograph)
       if (cfg.seconds) {
         var ss = E('g', { transform: 'translate(4 8)', opacity: 0.25 }, G.over), ssg = E('g', {}, ss);
@@ -320,8 +323,10 @@
         glow(E('circle', { id: U('hsec'), cy: -236, r: 6.5, fill: 'var(--lume)', stroke: 'var(--sec)', 'stroke-width': 2, class: 'lume' }, sg2), 's', 236, 0);
         G.s = [sg2, ssg];
       }
-      E('circle', { r: 13, fill: url('metal'), stroke: 'rgba(0,0,0,.5)', 'stroke-width': 1 }, G.over);
-      E('circle', { r: 4.5, fill: 'var(--c3)' }, G.over);
+      if (cfg.mainHands || cfg.seconds) {
+        E('circle', { r: 13, fill: url('metal'), stroke: 'rgba(0,0,0,.5)', 'stroke-width': 1 }, G.over);
+        E('circle', { r: 4.5, fill: 'var(--c3)' }, G.over);
+      }
 
       // --- glow layer (Nocturne): mirrors every lume element so it can shine above a darkness overlay ---
       if (cfg.glow) {
@@ -454,7 +459,7 @@
         if (ev.button) return;
         var p = pt(ev), pu = ev.target.closest && ev.target.closest('.wt-pusher');
         if (pu) { st.drag = { kind: 'pusher', el: pu }; pu.classList.add('down'); return; }
-        var kind = p.r > 500 ? null : p.r > 386 ? 'earth' : p.r > 322 ? 'ring' : 'dial';
+        var kind = p.r > 500 ? null : p.r > 386 ? 'earth' : p.r > 322 && cfg.ring !== 'none' ? 'ring' : 'dial';
         if (!kind) return;
         st.drag = { kind: kind, a: p.a, moved: 0, off0: st.off, city: cityOf(ev.target), x: ev.clientX, y: ev.clientY };
         try { host.setPointerCapture(ev.pointerId); } catch (e) { }
@@ -469,7 +474,7 @@
         if (d.moved < 2.5) return;
         da = d.acc; d.acc = 0;               // nothing is lost to the click-versus-drag threshold
         hideTip(); host.classList.add('dragging');
-        if (d.kind === 'earth') { st.off += da / 15; d.live = true; }
+        if (d.kind === 'earth') { if (cfg.earthDrag) { st.off += da / 15; d.live = true; } }
         else if (d.kind === 'ring') { cancelAnim(); WT.skew(WT.skew() + da / 15 * 3600000); emit('scrub'); }
       });
       var up = function (ev) {
@@ -477,14 +482,14 @@
         if (!d) return;
         if (d.kind === 'pusher') { d.el.classList.remove('down'); if (d.el.blur) d.el.blur(); if (ev.type === 'pointerup') press(d.el.getAttribute('data-p')); return; }      // no sticky focus after a mouse press
         if (d.moved >= 2.5) {
-          if (d.kind === 'earth') {      // snap to the nearest zone
+          if (d.kind === 'earth' && cfg.earthDrag) {      // snap to the nearest zone
             var cur = WT.wrapOff(st.off), best = null, bd = 99;
             cityEls.forEach(function (c) { var dd = Math.abs(mod(c.e.slot - cur + 12, 24) - 12); if (dd < bd) { bd = dd; best = c; } });
             if (best) setHome(best.e.city);
           }
           return;
         }
-        if (d.city) { hideTip(); setHome(d.city.e.city); }
+        if (d.city) { hideTip(); if (cfg.cityClick) cfg.cityClick(d.city.e.city); else setHome(d.city.e.city); }
         else { if (cfg.tapLapse && d.kind === 'dial') timelapse(); emit('tap', d.kind, ev); }
       };
       host.addEventListener('pointerup', up); host.addEventListener('pointercancel', up);
@@ -498,13 +503,13 @@
       host.addEventListener('keydown', function (ev) {
         if (ev.key !== 'Enter' && ev.key !== ' ') return;
         var c = cityOf(ev.target), pu = ev.target.closest && ev.target.closest('.wt-pusher');
-        if (c) { ev.preventDefault(); setHome(c.e.city); } else if (pu) { ev.preventDefault(); press(pu.getAttribute('data-p')); }
+        if (c) { ev.preventDefault(); if (cfg.cityClick) cfg.cityClick(c.e.city); else setHome(c.e.city); } else if (pu) { ev.preventDefault(); press(pu.getAttribute('data-p')); }
       });
       host.addEventListener('focusin', function (ev) { var c = cityOf(ev.target); if (c) { var r = c.g.getBoundingClientRect(); showTip(c, r.left + r.width / 2, r.bottom - 14); } });
       host.addEventListener('focusout', hideTip);
     }
     function press(name) {
-      if (name === 'crown') { if (cfg.crownReset) reset(); } else if (name === 'zone') step(1);
+      if (name === 'crown') { if (cfg.crownReset) reset(); } else if (name === 'zone') { if (cfg.zoneStep) cfg.zoneStep(1); else step(1); }
       emit('pusher', name);
     }
     function cancelAnim() { st.lapse = null; st.resetting = false; host.classList.remove('lapsing'); }
@@ -552,8 +557,10 @@
       G.earth.setAttribute('transform', R(st.earthA));
       G.map.setAttribute('transform', R(st.earthA));
       G.ring.setAttribute('transform', R(st.ringA));
-      G.h[0].setAttribute('transform', R(st.hA)); G.h[1].setAttribute('transform', R(st.hA));
-      G.m[0].setAttribute('transform', R(st.mA)); G.m[1].setAttribute('transform', R(st.mA));
+      if (G.h) {
+        G.h[0].setAttribute('transform', R(st.hA)); G.h[1].setAttribute('transform', R(st.hA));
+        G.m[0].setAttribute('transform', R(st.mA)); G.m[1].setAttribute('transform', R(st.mA));
+      }
       if (G.s) { G.s[0].setAttribute('transform', R(st.sA)); G.s[1].setAttribute('transform', R(st.sA)); }
       if (G.gf) {
         G.gf.earth.setAttribute('transform', R(st.earthA)); G.gf.ring.setAttribute('transform', R(st.ringA));
@@ -561,7 +568,7 @@
       }
       // keep ring numerals and city names upright on screen
       var i, n, a, fl;
-      for (i = 0; i < 24; i++) {
+      for (i = 0; i < numEls.length; i++) {
         n = numEls[i]; a = mod(st.ringA - n.h * 15, 360); fl = a > 90 && a < 270;
         if (fl !== n.flip) { n.flip = fl; n.el.setAttribute('transform', 'rotate(' + (-n.h * 15) + ') translate(0 -353)' + (fl ? ' rotate(180 0 0)' : '')); }
       }
@@ -578,6 +585,7 @@
       emit('frame', st, ms);
     }
     function paintSky(sun, ms) {
+      if (cfg.ring === 'none') return;
       // colour each quarter-hour of the ring by how high the sun stands at the home city at that clock time
       var lat = st.home.lat, lon = st.home.lon, l = WT.local(st.home.tz, ms);
       var ha = mod(lon - sun.lon + 180, 360) - 180, noon = l.hours - ha / 15, segs = G.sky.childNodes, lum = [];
@@ -598,6 +606,7 @@
 
     return {
       host: host, cfg: cfg, st: st, get svg() { return svg; }, get G() { return G; }, get glowItems() { return glowItems; }, get zones() { return zones; },
+      get cityEls() { return cityEls; }, mapXY: function (lat, lon) { return proj(cfg.mapR, lat, lon); },
       on: function (n, fn) { (listeners[n] = listeners[n] || []).push(fn); return this; },
       set: function (o) { for (var k in o) cfg[k] = o[k]; build(); return this; },
       setHome: setHome, step: step, reset: reset, timelapse: timelapse, cancelAnim: cancelAnim, press: press,

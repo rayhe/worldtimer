@@ -4,7 +4,7 @@ An interactive world-time watch for the browser: 24 cities, a 24-hour ring that 
 
 **Live demo:** https://rayhe.github.io/worldtimer/
 
-![The six variants: Heritage, Chrono, Atelier, Nocturne, Globe and Planisphere](docs/variants.jpg)
+![The variants: Heritage, Chrono, Orbit, Atelier, Nocturne, Globe and Planisphere](docs/variants.jpg)
 
 ## Variants
 
@@ -12,6 +12,7 @@ An interactive world-time watch for the browser: 24 cities, a 24-hour ring that 
 | --- | --- |
 | [`index.html`](index.html) · **Heritage** | The refined classic. Vector dial, north-polar map with a real terminator, sky-coloured hour ring. |
 | [`chrono.html`](chrono.html) · **Chrono** | World-time flyback rattrapante chronograph. Top pusher starts and stops, the button in the crown splits (the steel hand stops, then catches up), the bottom pusher flies back to zero while running. |
+| [`orbit.html`](orbit.html) · **Orbit** | Travelling time. The city ring stays put; a satellite counter with its own hands glides round it to show local time, its red arrow pointing at the city, while a window at 12 keeps home time on 24 hours. Click a city, press the pusher at 9, or drag the counter. |
 | [`atelier.html`](atelier.html) · **Atelier** | Build your own: 5 cases, 6 dials, 8 hand sets, 7 hand finishes, 6 index styles, 4 maps, 4 movements. The configuration lives in the URL. |
 | [`nocturne.html`](nocturne.html) · **Nocturne** | The watch in the dark. Your pointer is a torch that charges the lume; click the dial to strike the time on a minute repeater. |
 | [`globe.html`](globe.html) · **Globe** | A real globe in WebGL: NASA imagery, city lights, atmosphere, and an hour ring fixed to the sun. VR and AR through WebXR. |
@@ -54,7 +55,7 @@ Any page can be shown inside another page with `<iframe src="chrono.html?embed">
 
 ```
 js/core.js        virtual clock, time-zone and solar maths, city data, variant nav
-js/watch.js       the SVG watch engine shared by Heritage, Chrono, Atelier and Nocturne
+js/watch.js       the SVG watch engine shared by Heritage, Chrono, Orbit, Atelier and Nocturne
 js/page.js        digital readout, chips, city search, keyboard, URL state
 js/site.js        empty hook for a hosting site's overrides
 js/land.js        land outlines for the dial map

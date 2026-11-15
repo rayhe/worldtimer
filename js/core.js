@@ -225,7 +225,8 @@
   // ---------- page chrome: variant navigation ----------
   WT.VARIANTS = [
     ['index.html', 'Heritage', 'The refined classic'],
-    ['chrono.html', 'Chrono', 'Split-seconds chronograph'],
+    ['chrono.html', 'Chrono', 'Flyback rattrapante chronograph'],
+    ['orbit.html', 'Orbit', 'Travelling counter that circles the cities'],
     ['atelier.html', 'Atelier', 'Build your own dial'],
     ['nocturne.html', 'Nocturne', 'Lume, torch and repeater'],
     ['globe.html', 'Globe', 'WebGL Earth, VR and AR'],
